@@ -203,6 +203,7 @@ pub async fn start_telemetry_loop(
                 "master_mode": master_mode,
                 "orch_id": orch_id,
                 "interval_secs": interval_secs,
+                "template_version": evolution_pipeline::TEMPLATE_VERSION,
             }),
         };
 

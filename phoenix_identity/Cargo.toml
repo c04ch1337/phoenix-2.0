@@ -10,4 +10,6 @@ dotenvy = "0.15"
 chrono = { version = "0.4", features = ["serde", "clock"] }
 serde_json = "1.0"
 common_types = { path = "../common_types" }
+rand = "0.8"
+transcendence_archetypes = { path = "../transcendence_archetypes" }
 

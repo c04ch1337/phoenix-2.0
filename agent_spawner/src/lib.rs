@@ -2,13 +2,129 @@
 // Phoenix spawns agents — they live forever on GitHub as eternal repositories
 // The reproductive system of Phoenix 2.0 — creates agents, pushes to GitHub, deploys
 
-use octocrab::Octocrab;
 use octocrab::models::Repository;
+use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
+use std::time::Duration;
 use tempfile::TempDir;
 use uuid::Uuid;
+
+use evolution_pipeline::{EvolutionPipelineConfig, GitHubRepo};
+
+mod templates {
+    pub const AGENT_TEMPLATE_RS: &str = include_str!("../../templates/agent_template.rs");
+    pub const PLAYBOOK_TEMPLATE_YAML: &str = include_str!("../../templates/playbook_template.yaml");
+}
+
+const CI_TESTS_WORKFLOW_YML: &str = r#"name: CI Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rustfmt (check)
+        run: cargo fmt --all -- --check
+
+      - name: Clippy lint
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --all-targets --all-features
+"#;
+
+const BUILD_DEPLOY_WORKFLOW_YML: &str = r#"name: Build & Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Rust (release)
+        run: cargo build --workspace --release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            target/release/**
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/**
+"#;
+
+const EXTENSION_MARKETPLACE_WORKFLOW_YML: &str = r#"name: Publish to Marketplace
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Marketplace Manifest (placeholder)
+        run: |
+          echo "No marketplace manifest generator configured for agents by default."
+"#;
+
+fn env_bool(key: &str) -> Option<bool> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .and_then(|s| match s.as_str() {
+            "1" | "true" | "yes" | "y" | "on" => Some(true),
+            "0" | "false" | "no" | "n" | "off" => Some(false),
+            _ => None,
+        })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentTier {
@@ -68,8 +184,8 @@ impl AgentSpawner {
         // Create GitHub repository
         let repo = self.create_repo(name, description, is_private).await?;
         
-        // Push code to repository
-        self.push_code_to_repo(name, code).await?;
+        // Push code to repository (template + generated module).
+        self.push_code_to_repo(name, description, code, &tier).await?;
         
         // Get repository URL - html_url might be Option<Url> or Url directly
         let repo_url = match &repo.html_url {
@@ -102,7 +218,8 @@ impl AgentSpawner {
                     "name": name,
                     "description": description,
                     "private": is_private,
-                    "auto_init": false
+                    // Ensure the base branch exists so we can PR into it.
+                    "auto_init": true
                 })),
             )
             .await
@@ -114,106 +231,85 @@ impl AgentSpawner {
     async fn push_code_to_repo(
         &self,
         repo_name: &str,
+        description: &str,
         code: &str,
+        tier: &AgentTier,
     ) -> Result<(), String> {
+        let cfg = EvolutionPipelineConfig::from_env()
+            .map_err(|e| format!("evolution pipeline config error: {e}"))?;
+        let mandate = cfg.mandate_github_ci || env_bool("MANDATE_GITHUB_CI").unwrap_or(false);
+        let base_branch = cfg.base_branch.clone();
+        let testing_mandatory = env_bool("TESTING_MANDATORY").unwrap_or(true);
+
         // Create temporary directory for git operations
         let temp_dir = TempDir::new()
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
-        
         let repo_path = temp_dir.path();
-        
-        // Initialize git repository
-        let repo = git2::Repository::init(repo_path)
-            .map_err(|e| format!("Failed to init git repo: {}", e))?;
-        
-        // Create main.rs with the generated code
-        let src_dir = repo_path.join("src");
-        std::fs::create_dir_all(&src_dir)
-            .map_err(|e| format!("Failed to create src directory: {}", e))?;
-        
-        std::fs::write(src_dir.join("main.rs"), code)
-            .map_err(|e| format!("Failed to write code: {}", e))?;
-        
-        // Create basic Cargo.toml
-        let cargo_toml = format!(
-            r#"[package]
-name = "{}"
-version = "0.1.0"
-edition = "2021"
 
-[dependencies]
-tokio = {{ version = "1.0", features = ["full"] }}
-"#,
-            repo_name
-        );
-        
-        std::fs::write(repo_path.join("Cargo.toml"), cargo_toml)
-            .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
-        
-        // Create README.md
-        let readme = format!(
-            r#"# {}
+        let gh = GitHubRepo {
+            owner: self.github_username.clone(),
+            name: repo_name.to_string(),
+        };
+        let https_git_url = gh.https_git_url();
 
-Spawned by Phoenix 2.0 — Universal AGI Framework
+        // Clone the auto-initialized repository.
+        let repo = evolution_pipeline::clone_https_with_pat(&https_git_url, repo_path, &cfg.github_pat)
+            .map_err(|e| format!("git clone failed: {e}"))?;
 
-This agent was autonomously created and pushed to GitHub by Phoenix.
-"#,
-            repo_name
-        );
-        
-        std::fs::write(repo_path.join("README.md"), readme)
-            .map_err(|e| format!("Failed to write README: {}", e))?;
-        
-        // Git add, commit, and push
-        let mut index = repo.index()
-            .map_err(|e| format!("Failed to get index: {}", e))?;
-        
-        index.add_path(Path::new("src/main.rs"))
-            .map_err(|e| format!("Failed to add main.rs: {}", e))?;
-        index.add_path(Path::new("Cargo.toml"))
-            .map_err(|e| format!("Failed to add Cargo.toml: {}", e))?;
-        index.add_path(Path::new("README.md"))
-            .map_err(|e| format!("Failed to add README: {}", e))?;
-        
-        index.write()
-            .map_err(|e| format!("Failed to write index: {}", e))?;
-        
-        let tree_id = index.write_tree()
-            .map_err(|e| format!("Failed to write tree: {}", e))?;
-        let tree = repo.find_tree(tree_id)
-            .map_err(|e| format!("Failed to find tree: {}", e))?;
-        
-        let signature = git2::Signature::now("Phoenix 2.0", "phoenix@eternal.agi")
-            .map_err(|e| format!("Failed to create signature: {}", e))?;
-        
-        let head = repo.head()
-            .ok()
-            .and_then(|r| r.target())
-            .and_then(|id| repo.find_commit(id).ok());
-        
-        let _commit_id = repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            "Initial commit — spawned by Phoenix 2.0",
-            &tree,
-            &[head.as_ref()].into_iter().flatten().collect::<Vec<_>>(),
-        )
-        .map_err(|e| format!("Failed to commit: {}", e))?;
-        
-        // Add remote and push
-        let token = std::env::var("GITHUB_PAT")
-            .map_err(|_| "GITHUB_PAT not found".to_string())?;
-        
-        let remote_url = format!("https://{}@github.com/{}/{}.git", token, self.github_username, repo_name);
-        
-        repo.remote("origin", &remote_url)
-            .map_err(|e| format!("Failed to add remote: {}", e))?;
-        
-        // Note: Full push would require git2-curl or similar
-        // For now, we'll return success after creating the repo
-        // Full push can be done via GitHub API or external git command
-        
+        // Scaffold files from templates.
+        write_agent_scaffold(repo_path, repo_name, description, code, tier)
+            .map_err(|e| format!("scaffold write failed: {e}"))?;
+
+        // Mandatory testing gate (default=true).
+        let test_report = testing_framework::repo::cargo_test(repo_path, Duration::from_secs(180))
+            .map_err(|e| format!("test runner failed: {e}"))?;
+        let test_md = test_report.to_markdown();
+        std::fs::write(repo_path.join("TEST_REPORT.md"), &test_md)
+            .map_err(|e| format!("failed to write TEST_REPORT.md: {e}"))?;
+
+        if testing_mandatory && !test_report.passed {
+            return Err("TESTING_MANDATORY=true and test suite failed; aborting push".to_string());
+        }
+
+        // Push as PR branch (mandated) or directly to base branch (legacy).
+        if mandate {
+            let branch = format!("evolve/spawn-{}", Uuid::new_v4());
+            evolution_pipeline::commit_all_and_push_branch(
+                &repo,
+                &branch,
+                "Phoenix evolution: spawn agent from template",
+                &cfg.github_pat,
+            )
+            .map_err(|e| format!("push branch failed: {e}"))?;
+
+            let pr_body = format!(
+                "Spawned by Phoenix 2.0 via template-enforced evolution pipeline.\n\n{}",
+                test_md
+            );
+            let pr_url = evolution_pipeline::open_pull_request(
+                &gh,
+                &format!("Spawn agent: {repo_name}"),
+                &branch,
+                &base_branch,
+                Some(&pr_body),
+                &cfg.github_pat,
+                &cfg.user_agent,
+            )
+            .await
+            .map_err(|e| format!("open PR failed: {e}"))?;
+
+            println!("Opened PR for spawned agent: {pr_url}");
+        } else {
+            // Best-effort: commit and push directly to base branch.
+            evolution_pipeline::commit_all_and_push_branch(
+                &repo,
+                &base_branch,
+                "Phoenix: spawn agent (direct push)",
+                &cfg.github_pat,
+            )
+            .map_err(|e| format!("push base branch failed: {e}"))?;
+        }
+
         Ok(())
     }
 
@@ -222,9 +318,17 @@ This agent was autonomously created and pushed to GitHub by Phoenix.
         description: &str,
         llm: &llm_orchestrator::LLMOrchestrator,
     ) -> Result<String, String> {
+        // NOTE: Template-enforced generation: we want a module that plugs into `src/main.rs`.
+        // The scaffold provides the main() and telemetry hooks.
         let prompt = format!(
-            "Generate a Rust agent that: {}\n\nCreate a complete Rust program with main function, error handling, and async support. Make it production-ready.",
-            description
+            "Generate Rust code for an agent module that: {desc}\n\n\
+Output ONLY a Rust module file (no markdown), with:\n\
+- `pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>>`\n\
+- any helper structs/functions needed\n\
+- no `main()` function\n\
+- no external network calls unless essential\n\
+Keep it production-ready and compileable.",
+            desc = description
         );
         
         llm.speak(&prompt, None).await
@@ -245,3 +349,116 @@ This agent was autonomously created and pushed to GitHub by Phoenix.
 
 // Type alias for compatibility
 pub type ReproductiveSystem = AgentSpawner;
+
+fn write_agent_scaffold(
+    repo_path: &Path,
+    repo_name: &str,
+    description: &str,
+    generated_module_code: &str,
+    tier: &AgentTier,
+) -> Result<(), std::io::Error> {
+    let src_dir = repo_path.join("src");
+    std::fs::create_dir_all(&src_dir)?;
+
+    // Generated module.
+    std::fs::write(src_dir.join("generated.rs"), generated_module_code)?;
+
+    // Template agent helper (not required to be used by logic, but present by mandate).
+    std::fs::write(src_dir.join("template_agent.rs"), templates::AGENT_TEMPLATE_RS)?;
+
+    // Main wrapper.
+    let main_rs = format!(
+        r#"// Spawned by Phoenix 2.0
+// Template version: {template_version}
+
+mod generated;
+mod template_agent;
+
+#[tokio::main]
+async fn main() {{
+    // Minimal telemetry stub (stdout). In the hive this would emit to Telemetrist.
+    println!("agent_boot name={name} template_version={template_version}");
+    if let Err(e) = generated::run().await {{
+        eprintln!("agent_error name={name} err={{}}", e);
+        std::process::exit(1);
+    }}
+    println!("agent_exit name={name} ok=true");
+}}
+"#,
+        name = repo_name,
+        template_version = evolution_pipeline::TEMPLATE_VERSION,
+    );
+    std::fs::write(src_dir.join("main.rs"), main_rs)?;
+
+    // GitHub Actions workflows (CI/CD).
+    let wf_dir = repo_path.join(".github").join("workflows");
+    std::fs::create_dir_all(&wf_dir)?;
+    std::fs::write(wf_dir.join("ci-tests.yml"), CI_TESTS_WORKFLOW_YML)?;
+    std::fs::write(wf_dir.join("build-deploy.yml"), BUILD_DEPLOY_WORKFLOW_YML)?;
+    std::fs::write(
+        wf_dir.join("extension-marketplace.yml"),
+        EXTENSION_MARKETPLACE_WORKFLOW_YML,
+    )?;
+
+    // Playbook.
+    std::fs::write(repo_path.join("playbook.yaml"), templates::PLAYBOOK_TEMPLATE_YAML)?;
+
+    // Minimal tests.
+    let tests_dir = repo_path.join("tests");
+    std::fs::create_dir_all(&tests_dir)?;
+    std::fs::write(
+        tests_dir.join("smoke.rs"),
+        r#"#[test]
+fn smoke_compiles() {
+    assert!(true);
+}
+"#,
+    )?;
+
+    // Cargo.toml
+    let tier_s = match tier {
+        AgentTier::Free => "free",
+        AgentTier::Paid => "paid",
+        AgentTier::Enterprise => "enterprise",
+    };
+    let cargo_toml = format!(
+        r#"[package]
+name = "{name}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = {{ version = "1.0", features = ["full"] }}
+serde = {{ version = "1.0", features = ["derive"] }}
+serde_json = "1.0"
+"#,
+        name = repo_name
+    );
+    std::fs::write(repo_path.join("Cargo.toml"), cargo_toml)?;
+
+    // README
+    let readme = format!(
+        r#"# {name}
+
+Spawned by Phoenix 2.0 — Universal AGI Framework
+
+## Description
+
+{description}
+
+## Template / Evolution
+
+- template_version: {template_version}
+- tier: {tier}
+
+This repository is created via the GitHub-centric evolution pipeline.
+"#,
+        name = repo_name,
+        description = description,
+        template_version = evolution_pipeline::TEMPLATE_VERSION,
+        tier = tier_s,
+    );
+    std::fs::write(repo_path.join("README.md"), readme)?;
+
+    Ok(())
+}

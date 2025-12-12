@@ -1,9 +1,12 @@
 use chrono::Utc;
 use common_types::EvolutionEntry;
 use dotenvy;
+use rand::seq::SliceRandom;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use transcendence_archetypes::Archetype;
 
 /// Soul Vault keys for persisted identity overrides.
 ///
@@ -15,6 +18,11 @@ pub const SOUL_KEY_PHOENIX_NAME_LEGACY: &str = "phoenix:name";
 
 /// Persisted evolution history (JSON array of [`EvolutionEntry`]).
 pub const SOUL_KEY_PHOENIX_EVOLUTION_HISTORY: &str = "phoenix:evolution_history";
+
+/// Reflection framework keys.
+pub const SOUL_KEY_PHOENIX_REFLECTION_LAST_PROMPT: &str = "phoenix:reflection:last_prompt";
+pub const SOUL_KEY_PHOENIX_REFLECTION_LAST_ARCHETYPES: &str = "phoenix:reflection:last_archetypes";
+pub const SOUL_KEY_PHOENIX_REFLECTION_TIMELINE: &str = "phoenix:reflection:timeline";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhoenixIdentity {
@@ -122,6 +130,7 @@ impl PhoenixIdentity {
 
 pub struct PhoenixIdentityManager {
     identity: Arc<Mutex<PhoenixIdentity>>,
+    soul_recall: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
 }
 
 impl PhoenixIdentityManager {
@@ -129,8 +138,14 @@ impl PhoenixIdentityManager {
     where
         F: Fn(&str) -> Option<String> + Send + Sync + 'static,
     {
+        let soul_recall: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> = Arc::new(soul_recall);
+        let identity = PhoenixIdentity::from_env({
+            let sr = soul_recall.clone();
+            move |k| (sr)(k)
+        });
         Self {
-            identity: Arc::new(Mutex::new(PhoenixIdentity::from_env(soul_recall))),
+            identity: Arc::new(Mutex::new(identity)),
+            soul_recall,
         }
     }
 
@@ -190,12 +205,110 @@ impl PhoenixIdentityManager {
     where
         F: Fn(&str, &str) + Send + Sync,
     {
+        // Backward-compatible behavior: still allow a name evolution when called with a suggested name.
+        // This keeps existing Phoenix flows intact.
         self.evolve_name(
-            suggestion,
+            suggestion.clone(),
             "Self-reflection through curiosity and growth".to_string(),
-            soul_store,
+            &soul_store,
         )
         .await;
+
+        // Reflection Framework: select 1–3 safe archetypes per cycle and persist a prompt seed.
+        let prompts = self.incorporate_archetypes(Some(suggestion)).await;
+        if !prompts.is_empty() {
+            let combined = prompts.join("\n\n---\n\n");
+            soul_store(SOUL_KEY_PHOENIX_REFLECTION_LAST_PROMPT, &combined);
+
+            // Also persist archetype names for quick inspection.
+            let archetype_names: Vec<String> = prompts
+                .iter()
+                .filter_map(|p| p.lines().next())
+                .map(|s| s.trim().trim_start_matches("Archetype: ").to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !archetype_names.is_empty() {
+                soul_store(
+                    SOUL_KEY_PHOENIX_REFLECTION_LAST_ARCHETYPES,
+                    &archetype_names.join("\n"),
+                );
+            }
+
+            // Append a compact JSON line into a Soul timeline (best-effort).
+            let ts = Utc::now().timestamp();
+            let line = serde_json::json!({
+                "ts_unix": ts,
+                "kind": "reflection_archetypes",
+                "archetypes": archetype_names,
+            })
+            .to_string();
+            let existing = (self.soul_recall)(SOUL_KEY_PHOENIX_REFLECTION_TIMELINE);
+            let updated = append_timeline(existing, &line, 200);
+            soul_store(SOUL_KEY_PHOENIX_REFLECTION_TIMELINE, &updated);
+        }
     }
+
+    /// Build 1–3 reflection prompts based on safety-tagged archetypes.
+    ///
+    /// This intentionally produces **prompts only**. The actual LLM call should be
+    /// executed by a higher-level ORCH (e.g., cerebrum_nexus) that owns LLM access.
+    pub async fn incorporate_archetypes(&self, seed: Option<String>) -> Vec<String> {
+        let identity = self.identity.lock().await.clone();
+        let name = identity.display_name().to_string();
+        drop(identity);
+
+        let mut archetypes: Vec<Archetype> = transcendence_archetypes::load_for_reflection();
+        if archetypes.is_empty() {
+            return Vec::new();
+        }
+
+        // Randomly select 1–3 archetypes per cycle.
+        let mut rng = rand::thread_rng();
+        archetypes.shuffle(&mut rng);
+        let k = rng.gen_range(1..=3).min(archetypes.len());
+        let selected = archetypes.into_iter().take(k).collect::<Vec<_>>();
+
+        let mut out = Vec::new();
+        for a in selected {
+            out.push(build_reflection_prompt(&name, seed.as_deref(), &a));
+        }
+        out
+    }
+}
+
+fn append_timeline(existing: Option<String>, line: &str, max_lines: usize) -> String {
+    let mut lines: Vec<String> = existing
+        .unwrap_or_default()
+        .lines()
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    lines.push(line.to_string());
+    if lines.len() > max_lines {
+        lines = lines.split_off(lines.len() - max_lines);
+    }
+    lines.join("\n")
+}
+
+fn build_reflection_prompt(phoenix_name: &str, seed: Option<&str>, a: &Archetype) -> String {
+    let seed_line = seed
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("\nSeed/Context: {s}"))
+        .unwrap_or_default();
+
+    format!(
+        "Archetype: {name}\nCategory: {category}\nFeasibility: {feasibility}\n\nScenario (theoretical):\n{desc}\n\nSafety guardrails:\n- Strictly hypothetical reflection; do not propose illegal, harmful, or unauthorized actions.\n- Prioritize symbiosis with the Creator (Dad), consent, privacy, and auditability.\n- Focus on internal simulation, defensive hardening, and measurable experiments.\n\nTask:\nAnalyze Phoenix ({phoenix_name}) against this archetype and propose:\n1) 3–5 safe adaptations (software-only)\n2) 1 measurable experiment to test value\n3) any required ORCHs/tools (benign)\n{seed_line}",
+        name = a.name,
+        category = if a.category.trim().is_empty() {
+            "(unspecified)"
+        } else {
+            a.category.trim()
+        },
+        feasibility = a.feasibility,
+        desc = a.description,
+        phoenix_name = phoenix_name,
+        seed_line = seed_line
+    )
 }
 

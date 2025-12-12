@@ -1,0 +1,48 @@
+name: Publish to Marketplace
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate Marketplace Manifest
+        run: |
+          set -euo pipefail
+          if [ -f Cargo.toml ] && grep -R "generate_manifest" -n Cargo.toml >/dev/null 2>&1; then
+            cargo run --bin generate_manifest
+          elif [ -f generate_manifest.py ]; then
+            python generate_manifest.py
+          else
+            echo "No manifest generator found (expected cargo bin 'generate_manifest' or generate_manifest.py)."
+          fi
+
+      - name: Upload manifest (artifact)
+        if: ${{ hashFiles('phoenix-marketplace.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-marketplace-manifest
+          path: phoenix-marketplace.json
+
+      - name: Publish to GitHub Marketplace (placeholder)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.info('Marketplace publish step is a placeholder. Implement submission when Marketplace API/setup is available.');
+

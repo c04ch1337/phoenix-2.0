@@ -1,0 +1,36 @@
+name: Publish to Marketplace
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate Marketplace Manifest
+        run: python generate_manifest.py
+
+      - name: Upload manifest (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-marketplace-manifest
+          path: phoenix-marketplace.json
+
+      - name: Publish to GitHub Marketplace (placeholder)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.info('Marketplace publish step is a placeholder. Implement submission when Marketplace API/setup is available.');
+

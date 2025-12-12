@@ -28,8 +28,11 @@ members = [
     "llm_orchestrator",
     "synaptic_pulse_distributor",
     "agent_spawner",
+    "evolution_pipeline",
+    "testing_framework",
     "caos",
     "hyperspace_cache",
     "user_identity",
     "phoenix_identity",
+    "transcendence_archetypes",
 ]

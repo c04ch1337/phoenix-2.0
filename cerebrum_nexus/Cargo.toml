@@ -41,6 +41,7 @@ asi_wallet_identity = { path = "../asi_wallet_identity" }
 user_identity = { path = "../user_identity" }
 phoenix_identity = { path = "../phoenix_identity" }
 common_types = { path = "../common_types" }
+evolution_pipeline = { path = "../evolution_pipeline" }
 
 [features]
 # WASM tool-loading is heavy; keep it feature-gated so the workspace stays quick to build.
