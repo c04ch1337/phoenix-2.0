@@ -1,10 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
+    "common_types",
     "phoenix-tui",
     "cerebrum_nexus",
     "self_critic",
     "lucid_dreaming",
+    "shared_dreaming",
+    "dream_recording",
+    "dream_healing",
     "multi_modal_perception",
     "context_engine",
     "emotional_intelligence_core",
@@ -26,4 +30,6 @@ members = [
     "agent_spawner",
     "caos",
     "hyperspace_cache",
+    "user_identity",
+    "phoenix_identity",
 ]

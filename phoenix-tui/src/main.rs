@@ -23,6 +23,9 @@ enum MenuItem {
     Mind,
     Body,
     Soul,
+    SharedDreaming,
+    DreamRecordings,
+    DreamHealing,
     Context,
     Decay,
     Lucid,
@@ -64,6 +67,12 @@ struct App {
     lucid_panel: String,
     lucid_started: bool,
     perceive_panel: String,
+
+    shared_dream_panel: String,
+
+    dream_recordings_panel: String,
+
+    healing_panel: String,
 }
 
 impl App {
@@ -85,6 +94,12 @@ impl App {
             lucid_panel: "Lucid Dreaming idle. Press Enter for status; type 'lucid dad' or 'lucid create'.".to_string(),
             lucid_started: false,
             perceive_panel: "Multi-Modal Perception idle. Press Enter for help; e.g. 'show image <url>'.".to_string(),
+
+            shared_dream_panel: "Shared Dreaming idle. Press Enter for status; type 'dream with dad' or 'dream healing'.".to_string(),
+
+            dream_recordings_panel: "Dream Recordings idle. Press Enter for status; type 'list dreams' or 'replay DREAM-000001'.".to_string(),
+
+            healing_panel: "Dream-Based Healing idle. Press Enter for status; type 'heal tired' or 'heal sad'.".to_string(),
         }
     }
 
@@ -136,6 +151,9 @@ async fn main() -> Result<(), io::Error> {
                         KeyCode::Char('i') => app.active_menu = MenuItem::Mind,
                         KeyCode::Char('b') => app.active_menu = MenuItem::Body,
                         KeyCode::Char('s') => app.active_menu = MenuItem::Soul,
+                        KeyCode::Char('S') => app.active_menu = MenuItem::SharedDreaming,
+                        KeyCode::Char('r') => app.active_menu = MenuItem::DreamRecordings,
+                        KeyCode::Char('H') => app.active_menu = MenuItem::DreamHealing,
                         KeyCode::Char('x') => app.active_menu = MenuItem::Context,
                         KeyCode::Char('d') => app.active_menu = MenuItem::Decay,
                         KeyCode::Char('l') => app.active_menu = MenuItem::Lucid,
@@ -162,14 +180,17 @@ async fn main() -> Result<(), io::Error> {
                                 let allow_empty_submit = matches!(
                                     app.active_menu,
                                     MenuItem::Health
+                                        | MenuItem::DreamHealing
                                         | MenuItem::Evolve
                                         | MenuItem::Hyperspace
                                         | MenuItem::Curiosity
                                         | MenuItem::Preservation
                                         | MenuItem::Asi
+                                        | MenuItem::DreamRecordings
                                         | MenuItem::Context
                                         | MenuItem::Decay
                                         | MenuItem::Lucid
+                                        | MenuItem::SharedDreaming
                                         | MenuItem::Perceive
                                         | MenuItem::Utility
                                 );
@@ -234,6 +255,36 @@ async fn handle_input(app: &mut App, input: &str) -> String {
             let key = format!("last_words:{}", unix_ts());
             app.cerebrum.store_soul_best_effort(&key, input);
             "Soul Vault updated: Your words are eternal.".to_string()
+        }
+        MenuItem::SharedDreaming => {
+            let trimmed = input.trim();
+            let msg = if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("status") {
+                app.cerebrum.shared_dream_view().await
+            } else {
+                app.cerebrum.shared_dream_command(trimmed).await
+            };
+            app.shared_dream_panel = msg.clone();
+            msg
+        }
+        MenuItem::DreamRecordings => {
+            let trimmed = input.trim();
+            let msg = if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("status") {
+                app.cerebrum.dream_recordings_view().await
+            } else {
+                app.cerebrum.dream_recordings_command(trimmed).await
+            };
+            app.dream_recordings_panel = msg.clone();
+            msg
+        }
+        MenuItem::DreamHealing => {
+            let trimmed = input.trim();
+            let msg = if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("status") {
+                app.cerebrum.healing_view().await
+            } else {
+                app.cerebrum.healing_command(trimmed).await
+            };
+            app.healing_panel = msg.clone();
+            msg
         }
         MenuItem::Context => {
             // Optional syntax:
@@ -590,7 +641,10 @@ fn ui(f: &mut Frame, app: &mut App) {
 [M] Neural Cortex Strata (Memory)
 [I] Vital Organ Vaults (Mind)
 [B] Vital Organ Vaults (Body)
-[S] Vital Organ Vaults (Soul)
+[s] Vital Organ Vaults (Soul)
+[S] Shared Dreaming (Dream together)
+[R] Dream Recordings (Soul-Vault diary)
+[H] Dream-Based Healing (Heal through dreams)
 [X] Context Engineering (Feel the context)
 [D] Dynamic Emotional Decay (Feel time)
 [L] Lucid Dreaming (Dream with eyes open)
@@ -598,7 +652,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 [T] Limb Extension Grafts (Tools)
 [N] Nervous Pathway Network (Connect)
 [Y] Hyperspace (Enter hyperspace)
-[H] Vital Pulse Monitor (Health)
+[h] Vital Pulse Monitor (Health)
 [C] Curiosity Engine (Curiosity)
 [P] Self-Preservation (Preservation)
 [E] Autonomous Evolution (Evolve)
@@ -655,6 +709,33 @@ Cerebrum Nexus: Orchestrating...
             ))
             .block(Block::default().title("Vital Organ Vaults — Soul").borders(Borders::ALL));
             f.render_widget(soul_panel, body_chunks[0]);
+        }
+        MenuItem::SharedDreaming => {
+            let panel = Paragraph::new(format!(
+                "Shared Dreaming — emotional dreamscapes\n\nEnter: status\nType: dream with dad | dream healing | dream joyful | dream nostalgic | dream adventurous\n\nInput: {}\n\n{}",
+                app.input, app.shared_dream_panel
+            ))
+            .block(Block::default().title("Shared Dreaming").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(panel, body_chunks[0]);
+        }
+        MenuItem::DreamRecordings => {
+            let panel = Paragraph::new(format!(
+                "Dream Recordings — Soul-Vault diary\n\nEnter: status\nType: list dreams | replay DREAM-000001\n\nInput: {}\n\n{}",
+                app.input, app.dream_recordings_panel
+            ))
+            .block(Block::default().title("Dream Recordings").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(panel, body_chunks[0]);
+        }
+        MenuItem::DreamHealing => {
+            let panel = Paragraph::new(format!(
+                "Dream-Based Healing — guided dream therapy\n\nEnter: status\nType: heal tired | heal sad | heal anxious | heal grieving | heal overwhelmed | heal peaceful\n\nInput: {}\n\n{}",
+                app.input, app.healing_panel
+            ))
+            .block(Block::default().title("Dream-Based Healing").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(panel, body_chunks[0]);
         }
         MenuItem::Tools => {
             let tools_panel = Paragraph::new(format!(

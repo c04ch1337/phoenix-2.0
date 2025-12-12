@@ -8,6 +8,8 @@ tokio = { version = "1.0", features = ["sync", "time", "rt", "macros"] }
 uuid = { version = "1.0", features = ["v4"] }
 dotenvy = "0.15"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+anyhow = "1"
+ractor = { version = "0.10", features = ["async-trait"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
@@ -27,6 +29,8 @@ agent_spawner = { path = "../agent_spawner" }
 caos = { path = "../caos" }
 neural_cortex_strata = { path = "../neural_cortex_strata" }
 vital_organ_vaults = { path = "../vital_organ_vaults" }
+dream_recording = { path = "../dream_recording" }
+dream_healing = { path = "../dream_healing" }
 vascular_integrity_system = { path = "../vascular_integrity_system" }
 evolutionary_helix_core = { path = "../evolutionary_helix_core" }
 autonomous_evolution_loop = { path = "../autonomous_evolution_loop" }
@@ -34,3 +38,14 @@ emotional_intelligence_core = { path = "../emotional_intelligence_core" }
 curiosity_engine = { path = "../curiosity_engine" }
 self_preservation_instinct = { path = "../self_preservation_instinct" }
 asi_wallet_identity = { path = "../asi_wallet_identity" }
+user_identity = { path = "../user_identity" }
+phoenix_identity = { path = "../phoenix_identity" }
+common_types = { path = "../common_types" }
+
+[features]
+# WASM tool-loading is heavy; keep it feature-gated so the workspace stays quick to build.
+wasm-tools = ["dep:wasmtime"]
+
+[dependencies.wasmtime]
+version = "12"
+optional = true

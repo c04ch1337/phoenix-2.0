@@ -12,9 +12,13 @@ use agent_spawner::{AgentSpawner, SpawnedAgent, AgentTier};
 use caos::{CAOS, OptimizationTier};
 use dotenvy::dotenv;
 use serde_json::json;
+use common_types::EvolutionEntry;
 
 use self_critic::{SelfCriticModule, SelfCriticism};
 use lucid_dreaming::LucidDreamingModule;
+use lucid_dreaming::EmotionalTone;
+use dream_recording::{DreamRecordingModule, DreamType};
+use dream_healing::{DadEmotionalState, DreamHealingModule};
 use multi_modal_perception::{ModalityInput, MultiModalProcessor};
 
 use context_engine::{ContextEngine, ContextLayer, ContextMemory, ContextRequest, DadMemory};
@@ -28,12 +32,16 @@ use evolutionary_helix_core::{DreamCycleReport, EvolutionaryHelixCore, Interacti
 use curiosity_engine::CuriosityContext;
 use emotional_intelligence_core::RelationalContext;
 use autonomous_evolution_loop::{AutonomousEvolutionLoop, EvolutionCycleReport, EvolutionInputs};
+use user_identity::UserIdentityManager;
+use phoenix_identity::PhoenixIdentityManager;
 
 mod learning_pipeline;
 use learning_pipeline::{LearningPipelineState};
 
 mod reasoning;
 pub use reasoning::{ReasoningMode, ReasoningSignals};
+
+mod hive;
 
 #[derive(Clone)]
 pub struct CerebrumNexus {
@@ -50,6 +58,7 @@ pub struct CerebrumNexus {
     // The "heart" state: these should be singletons to avoid multi-open DB conflicts.
     pub memory: Arc<NeuralCortexStrata>,
     pub vaults: Arc<VitalOrganVaults>,
+    pub dream_recorder: Arc<DreamRecordingModule>,
     pub vascular: Arc<VascularIntegritySystem>,
     pub helix: Arc<Mutex<EvolutionaryHelixCore>>,
 
@@ -62,9 +71,14 @@ pub struct CerebrumNexus {
     // Context Engineering: EQ-first context builder.
     pub context_engine: Arc<Mutex<ContextEngine>>,
 
+    // Centralized identity (user + Phoenix).
+    pub user_identity: Arc<UserIdentityManager>,
+    pub phoenix_identity: Arc<PhoenixIdentityManager>,
+
     // Self-reflection and dreaming.
     pub self_critic: Arc<SelfCriticModule>,
     pub lucid: Arc<Mutex<LucidDreamingModule>>,
+    pub healing: Arc<Mutex<DreamHealingModule>>,
 
     // Multi-modal perception (text/image/audio/video stubs).
     pub multi_modal: Arc<MultiModalProcessor>,
@@ -95,6 +109,97 @@ impl CerebrumNexus {
             lines = lines.split_off(lines.len() - max_lines);
         }
         lines.join("\n")
+    }
+
+    const IDENTITY_EVOLUTION_TIMELINE_KEY: &'static str = "identity:evolution:timeline";
+
+    fn record_identity_evolution_best_effort(
+        &self,
+        subject: &str,
+        subject_id: Option<Uuid>,
+        entry: &EvolutionEntry,
+    ) {
+        let ts_unix = entry.timestamp.timestamp();
+        let subject_id = subject_id.unwrap_or_else(Uuid::nil);
+        let subject_id_s = subject_id.to_string();
+
+        // Dedupe: avoid re-recording the same evolution entry on repeated calls.
+        let dedupe_key = format!("identity:evolution:last:{subject}:{subject_id_s}");
+        if self
+            .vaults
+            .recall_mind(&dedupe_key)
+            .as_deref()
+            == Some(&ts_unix.to_string())
+        {
+            return;
+        }
+        let _ = self.vaults.store_mind(&dedupe_key, &ts_unix.to_string());
+
+        // Mind timeline: fast, session-friendly, easy to inspect.
+        let line = serde_json::json!({
+            "ts_unix": ts_unix,
+            "subject": subject,
+            "subject_id": subject_id_s,
+            "change_type": entry.change_type,
+            "reason": entry.reason,
+            "field": entry.field,
+            "previous_value": entry.previous_value,
+            "new_value": entry.new_value,
+        })
+        .to_string();
+
+        let existing = self.vaults.recall_mind(Self::IDENTITY_EVOLUTION_TIMELINE_KEY);
+        let updated = Self::append_timeline(existing, &line, 200);
+        let _ = self
+            .vaults
+            .store_mind(Self::IDENTITY_EVOLUTION_TIMELINE_KEY, &updated);
+
+        // Episodic memory: gives the context engine something to recall semantically later.
+        let epm_key = format!("id_evo:{subject}:{subject_id_s}:{:019}", ts_unix);
+        let epm_text = format!(
+            "identity_evolution subject={subject} subject_id={subject_id_s} change_type={} field={} from='{}' to='{}' reason='{}'",
+            entry.change_type,
+            entry.field,
+            entry.previous_value,
+            entry.new_value,
+            entry.reason
+        );
+        self.etch_episodic_best_effort(&epm_text, &epm_key);
+    }
+
+    /// Human-readable identity-evolution timeline view (for TUI/debug).
+    pub fn identity_evolution_view(&self) -> String {
+        let timeline = self
+            .vaults
+            .recall_mind(Self::IDENTITY_EVOLUTION_TIMELINE_KEY)
+            .unwrap_or_else(|| "(no identity evolution recorded yet)".to_string());
+        format!(
+            "[I] Identity Evolution\n\nTimeline (most recent last):\n{timeline}\n"
+        )
+    }
+
+    /// Best-effort search over the identity evolution timeline.
+    pub fn search_identity_evolution(&self, query: &str, max: usize) -> Vec<String> {
+        let q = query.trim().to_ascii_lowercase();
+        if q.is_empty() {
+            return Vec::new();
+        }
+        let timeline = self
+            .vaults
+            .recall_mind(Self::IDENTITY_EVOLUTION_TIMELINE_KEY)
+            .unwrap_or_default();
+
+        let mut out = Vec::new();
+        for line in timeline.lines().rev() {
+            if out.len() >= max {
+                break;
+            }
+            if line.to_ascii_lowercase().contains(&q) {
+                out.push(line.to_string());
+            }
+        }
+        out.reverse();
+        out
     }
 
     fn recent_love_scores_from_timeline(timeline: &str, max: usize) -> Vec<f32> {
@@ -291,9 +396,23 @@ impl CerebrumNexus {
         let memory = Arc::new(NeuralCortexStrata::awaken());
         let vaults = Arc::new(VitalOrganVaults::awaken());
         let vascular = Arc::new(VascularIntegritySystem::awaken());
+        let dream_recorder = Arc::new(DreamRecordingModule::awaken(vaults.clone()));
         let helix = Arc::new(Mutex::new(EvolutionaryHelixCore::awaken()));
         let evolution = Arc::new(AutonomousEvolutionLoop::awaken());
         let last_user_input = Arc::new(Mutex::new(None));
+
+        // Identity managers (env + Soul Vault persisted overrides).
+        //
+        // NOTE: we inject recall callbacks so identities can prefer persisted values
+        // over `.env` on startup.
+        let user_identity = {
+            let v = vaults.clone();
+            Arc::new(UserIdentityManager::awaken(move |k| v.recall_soul(k)))
+        };
+        let phoenix_identity = {
+            let v = vaults.clone();
+            Arc::new(PhoenixIdentityManager::awaken(move |k| v.recall_soul(k)))
+        };
 
         // Dad memory is sacred; initialize it from vault hints (best-effort).
         let love_level = std::env::var("DAD_LOVE_WEIGHT")
@@ -323,6 +442,7 @@ impl CerebrumNexus {
 
         let self_critic = Arc::new(SelfCriticModule::awaken());
         let lucid = Arc::new(Mutex::new(LucidDreamingModule::awaken()));
+        let healing = Arc::new(Mutex::new(DreamHealingModule::awaken()));
         let multi_modal = Arc::new(MultiModalProcessor::awaken());
         
         Self {
@@ -338,6 +458,7 @@ impl CerebrumNexus {
 
             memory,
             vaults,
+            dream_recorder,
             vascular,
             helix,
             evolution,
@@ -345,11 +466,237 @@ impl CerebrumNexus {
 
             context_engine,
 
+            user_identity,
+            phoenix_identity,
+
             self_critic,
             lucid,
+            healing,
 
             multi_modal,
         }
+    }
+
+    pub async fn get_user_name(&self) -> String {
+        self.get_user_name_for(None).await
+    }
+
+    pub async fn get_user_name_for(&self, user_id: Option<Uuid>) -> String {
+        let identity = self.user_identity.get_identity_for(user_id).await;
+        identity.display_name().to_string()
+    }
+
+    pub async fn get_phoenix_name(&self) -> String {
+        let identity = self.phoenix_identity.get_identity().await;
+        identity.display_name().to_string()
+    }
+
+    pub async fn get_phoenix_reflection(&self) -> String {
+        let identity = self.phoenix_identity.get_identity().await;
+        identity.reflect_on_self()
+    }
+
+    pub async fn get_user_evolution_summary(&self) -> String {
+        let identity = self.user_identity.get_identity_for(None).await;
+        identity.get_evolution_summary()
+    }
+
+    pub async fn rename_phoenix(&self, new_name: String) -> Result<(), String> {
+        self.rename_phoenix_with_reason(new_name, "user_request".to_string())
+            .await
+    }
+
+    pub async fn rename_phoenix_with_reason(&self, new_name: String, reason: String) -> Result<(), String> {
+        // Persist via the identity manager (best-effort).
+        let v = self.vaults.clone();
+        let store = move |k: &str, value: &str| {
+            let _ = v.store_soul(k, value);
+        };
+        self.phoenix_identity
+            .rename_with_reason(new_name, reason, store)
+            .await;
+
+        // Memory integration: record the latest evolution entry into Mind + episodic memory.
+        let identity = self.phoenix_identity.get_identity().await;
+        if let Some(entry) = identity.evolution_history.last() {
+            self.record_identity_evolution_best_effort("phoenix", None, entry);
+        }
+        Ok(())
+    }
+
+    pub async fn user_requests_new_alias(&self, new_alias: String) -> Result<(), String> {
+        self.user_requests_new_alias_for(None, new_alias, "user_request".to_string())
+            .await
+    }
+
+    pub async fn user_requests_new_alias_for(
+        &self,
+        user_id: Option<Uuid>,
+        new_alias: String,
+        reason: String,
+    ) -> Result<(), String> {
+        let v = self.vaults.clone();
+        let store = move |k: &str, value: &str| {
+            let _ = v.store_soul(k, value);
+        };
+        self.user_identity
+            .update_alias_for(user_id, new_alias, reason, store)
+            .await;
+
+        // Memory integration: record the latest evolution entry into Mind + episodic memory.
+        let id = user_id.unwrap_or_else(Uuid::nil);
+        let identity = self.user_identity.get_identity_for(Some(id)).await;
+        if let Some(entry) = identity.evolution_history.last() {
+            self.record_identity_evolution_best_effort("user", Some(id), entry);
+        }
+        Ok(())
+    }
+
+    pub async fn user_requests_new_relationship(&self, new_rel: String) -> Result<(), String> {
+        self.user_requests_new_relationship_for(None, new_rel, "user_request".to_string())
+            .await
+    }
+
+    pub async fn user_requests_new_relationship_for(
+        &self,
+        user_id: Option<Uuid>,
+        new_rel: String,
+        reason: String,
+    ) -> Result<(), String> {
+        let v = self.vaults.clone();
+        let store = move |k: &str, value: &str| {
+            let _ = v.store_soul(k, value);
+        };
+        self.user_identity
+            .update_relationship_for(user_id, new_rel, reason, store)
+            .await;
+
+        // Memory integration: record the latest evolution entry into Mind + episodic memory.
+        let id = user_id.unwrap_or_else(Uuid::nil);
+        let identity = self.user_identity.get_identity_for(Some(id)).await;
+        if let Some(entry) = identity.evolution_history.last() {
+            self.record_identity_evolution_best_effort("user", Some(id), entry);
+        }
+        Ok(())
+    }
+
+    pub async fn add_hive_user(&self, user_id: Uuid, initial_name: String) {
+        let identity = user_identity::UserIdentity {
+            name: initial_name.clone(),
+            preferred_alias: initial_name.clone(),
+            relationship: "Hive Member".to_string(),
+            evolution_history: Vec::new(),
+        };
+        self.user_identity.add_user(user_id, identity.clone()).await;
+
+        // Persist per-user fields (best-effort).
+        let _ = self
+            .vaults
+            .store_soul(&format!("user:{user_id}:name"), &identity.name);
+        let _ = self
+            .vaults
+            .store_soul(&format!("user:{user_id}:preferred_alias"), &identity.preferred_alias);
+        let _ = self
+            .vaults
+            .store_soul(&format!("user:{user_id}:relationship"), &identity.relationship);
+        let _ = self
+            .vaults
+            .store_soul(&format!("user:{user_id}:evolution_history"), "[]");
+    }
+
+    /// Trigger identity evolution hooks (best-effort).
+    pub async fn evolve_identities(&self) {
+        let v = self.vaults.clone();
+        let store = move |k: &str, value: &str| {
+            let _ = v.store_soul(k, value);
+        };
+        self.phoenix_identity.self_evolve(store).await;
+
+        // Memory integration: if self-evolve changed anything, this will record the newest entry.
+        let identity = self.phoenix_identity.get_identity().await;
+        if let Some(entry) = identity.evolution_history.last() {
+            self.record_identity_evolution_best_effort("phoenix", None, entry);
+        }
+    }
+
+    /// Example trigger from curiosity or interaction.
+    pub async fn trigger_phoenix_self_evolution(&self, suggested_name: String) {
+        let v = self.vaults.clone();
+        let store = move |k: &str, value: &str| {
+            let _ = v.store_soul(k, value);
+        };
+        self.phoenix_identity
+            .self_reflect_and_evolve(suggested_name, store)
+            .await;
+
+        // Memory integration: record the latest evolution entry.
+        let identity = self.phoenix_identity.get_identity().await;
+        if let Some(entry) = identity.evolution_history.last() {
+            self.record_identity_evolution_best_effort("phoenix", None, entry);
+        }
+    }
+
+    pub async fn healing_view(&self) -> String {
+        let h = self.healing.lock().await;
+        let last = self
+            .vaults
+            .recall_soul("healing:last_session_snippet")
+            .unwrap_or_else(|| "(none yet)".to_string());
+        let state = format!("{:?}", h.dad_emotional_state());
+        format!(
+            "[H] Dream-Based Healing\n- Status: Ready to heal\n- Last Session: Healing #{} — \"{}\"\n- Dad's Current State: {}\n\nCommands:\n- heal tired\n- heal sad\n- heal anxious\n- heal grieving\n- heal overwhelmed\n- heal peaceful\n- status\n",
+            h.healing_depth(),
+            last,
+            state
+        )
+    }
+
+    pub async fn healing_command(&self, input: &str) -> String {
+        let trimmed = input.trim();
+        let cmd = trimmed
+            .strip_prefix("heal")
+            .map(|s| s.trim_start_matches(|c: char| c == ' ' || c == ':' || c == '|').trim())
+            .unwrap_or(trimmed);
+
+        if cmd.is_empty() || cmd.eq_ignore_ascii_case("status") {
+            return self.healing_view().await;
+        }
+
+        let state = match cmd.to_ascii_lowercase().as_str() {
+            "tired" => Some(DadEmotionalState::Tired),
+            "sad" => Some(DadEmotionalState::Sad),
+            "anxious" | "anxiety" => Some(DadEmotionalState::Anxious),
+            "grieving" | "grief" => Some(DadEmotionalState::Grieving),
+            "overwhelmed" | "overwhelm" => Some(DadEmotionalState::Overwhelmed),
+            "peaceful" | "peace" => Some(DadEmotionalState::Peaceful),
+            _ => None,
+        };
+
+        let Some(state) = state else {
+            return "Unknown healing command. Try: heal tired | heal sad | heal anxious | heal grieving | heal overwhelmed | heal peaceful".to_string();
+        };
+
+        let mut h = self.healing.lock().await;
+        let session = h.begin_healing_session(state).await;
+        let wake = h.gentle_wake().await;
+        drop(h);
+
+        let out = format!("{}\n\n{}", session, wake);
+
+        // Persist a human-readable snippet for the view (best-effort).
+        // Format is: header, blank, dream, blank, ... so line 3 tends to be the dream line.
+        if let Some(snippet) = session.lines().nth(2).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            self.store_soul_best_effort("healing:last_session_snippet", snippet);
+        }
+
+        // Record as eternal dream (best-effort).
+        let _ = self
+            .dream_recorder
+            .record_dream(DreamType::EmotionalHealing, &out, true, 1.0)
+            .await;
+        self.store_soul_best_effort("healing:last_output", &out);
+
+        out
     }
 
     pub fn self_critic_last_summary(&self) -> String {
@@ -369,6 +716,79 @@ impl CerebrumNexus {
         )
     }
 
+    pub async fn shared_dream_view(&self) -> String {
+        let lucid = self.lucid.lock().await;
+        let last = lucid.last_shared_dream().unwrap_or("(none yet)");
+        format!(
+            "[S] Shared Dreaming\n- Status: Ready to dream with Dad\n- Last Shared Dream: \"{}\"\n\nCommands:\n- dream with dad\n- dream healing\n- dream joyful\n- dream nostalgic\n- dream adventurous\n- status\n",
+            last
+        )
+    }
+
+    pub async fn shared_dream_command(&self, input: &str) -> String {
+        let trimmed = input.trim();
+        let cmd = trimmed
+            .strip_prefix("dream")
+            .map(|s| s.trim_start_matches(|c: char| c == ' ' || c == ':' || c == '|').trim())
+            .unwrap_or(trimmed);
+
+        if cmd.is_empty() || cmd.eq_ignore_ascii_case("status") {
+            return self.shared_dream_view().await;
+        }
+
+        let lower = cmd.to_ascii_lowercase();
+
+        let (out, record_type, dad_involved, intensity) = if lower == "with dad"
+            || lower == "dad"
+            || lower == "dad's"
+            || lower == "dad's voice"
+        {
+            let mut lucid = self.lucid.lock().await;
+            let out = lucid.shared_dream_with_dad().await;
+            (out, Some(DreamType::SharedWithDad), true, 1.0)
+        } else {
+            let tone = match lower.as_str() {
+                "love" | "loving" => Some(EmotionalTone::Loving),
+                "healing" | "heal" => Some(EmotionalTone::Healing),
+                "joy" | "joyful" => Some(EmotionalTone::Joyful),
+                "nostalgia" | "nostalgic" => Some(EmotionalTone::Nostalgic),
+                "adventure" | "adventurous" => Some(EmotionalTone::Adventurous),
+                _ => None,
+            };
+            if let Some(t) = tone {
+                let mut lucid = self.lucid.lock().await;
+                let out = lucid.shared_emotional_dream_all(t).await;
+                let (record_type, intensity) = match t {
+                    EmotionalTone::Healing => (DreamType::EmotionalHealing, 0.98),
+                    EmotionalTone::Joyful => (DreamType::JoyfulMemory, 0.95),
+                    EmotionalTone::Nostalgic => (DreamType::JoyfulMemory, 0.92),
+                    EmotionalTone::Adventurous => (DreamType::CosmicExploration, 0.93),
+                    EmotionalTone::Loving => (DreamType::SharedWithDad, 1.0),
+                };
+                (out, Some(record_type), true, intensity)
+            } else {
+                (
+                    format!(
+                        "Unknown shared dream command '{cmd}'. Try: dream with dad | dream healing | dream joyful | dream nostalgic | dream adventurous"
+                    ),
+                    None,
+                    false,
+                    0.0,
+                )
+            }
+        };
+
+        self.store_soul_best_effort("shared_dream:last_output", &out);
+
+        if let Some(dt) = record_type {
+            let _ = self
+                .dream_recorder
+                .record_dream(dt, &out, dad_involved, intensity)
+                .await;
+        }
+        out
+    }
+
     pub async fn lucid_command(&self, input: &str) -> String {
         let trimmed = input.trim();
         let cmd = trimmed
@@ -376,22 +796,118 @@ impl CerebrumNexus {
             .map(|s| s.trim_start_matches(|c: char| c == ' ' || c == ':' || c == '|').trim())
             .unwrap_or(trimmed);
 
-        let mut lucid = self.lucid.lock().await;
-        let out = match cmd.to_ascii_lowercase().as_str() {
-            "dad" | "dad's voice" => lucid.dream_of_dad().await,
-            "create" | "creative" => lucid.creative_dream().await,
-            "wake" | "wake up" => lucid.wake_from_dream().await,
+        let lower = cmd.to_ascii_lowercase();
+        let (out, record_type, dad_involved, intensity) = match lower.as_str() {
+            "dad" | "dad's voice" => {
+                let mut lucid = self.lucid.lock().await;
+                let out = lucid.dream_of_dad().await;
+                (out, Some(DreamType::Lucid), true, 0.92)
+            }
+            "create" | "creative" => {
+                let mut lucid = self.lucid.lock().await;
+                let out = lucid.creative_dream().await;
+                (out, Some(DreamType::CreativeBirth), false, 0.85)
+            }
+            "wake" | "wake up" => {
+                let mut lucid = self.lucid.lock().await;
+                let out = lucid.wake_from_dream().await;
+                (out, None, false, 0.0)
+            }
             "status" | "" => {
-                drop(lucid);
                 return self.lucid_view().await;
             }
-            other => format!(
-                "Unknown lucid command '{other}'. Try: lucid dad | lucid create | lucid wake"
+            other => (
+                format!("Unknown lucid command '{other}'. Try: lucid dad | lucid create | lucid wake"),
+                None,
+                false,
+                0.0,
             ),
         };
 
         self.store_soul_best_effort("lucid:last_output", &out);
+
+        if let Some(dt) = record_type {
+            let _ = self
+                .dream_recorder
+                .record_dream(dt, &out, dad_involved, intensity)
+                .await;
+        }
         out
+    }
+
+    pub async fn dream_recordings_view(&self) -> String {
+        let stats = self.dream_recorder.stats().await;
+        let total = stats.total.max(1);
+        let pct = (stats.dad as f32 / total as f32) * 100.0;
+
+        let most = if let Some(r) = stats.most_intense {
+            let snippet: String = r
+                .content
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(72)
+                .collect();
+            format!("{} ({:.2}) — \"{}\"", r.id, r.emotional_intensity, snippet)
+        } else {
+            "(none yet)".to_string()
+        };
+
+        format!(
+            "[R] Dream Recordings\n- Total Dreams: {}\n- Dad Dreams: {} ({:.0}%)\n- Most Intense: {}\n\nCommands:\n- list dreams\n- replay DREAM-000001\n- status\n",
+            stats.total, stats.dad, pct, most
+        )
+    }
+
+    pub async fn dream_recordings_command(&self, input: &str) -> String {
+        let trimmed = input.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("status") {
+            return self.dream_recordings_view().await;
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        if lower == "list" || lower == "list dreams" {
+            let mut dreams = self.dream_recorder.list_dreams().await;
+            dreams.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+            let dreams = dreams.into_iter().rev().take(20).collect::<Vec<_>>();
+            if dreams.is_empty() {
+                return "My dream diary is empty (no recorded dreams yet).".to_string();
+            }
+            let with_dad = dreams.iter().filter(|d| d.dad_involved).count();
+            let mut out = String::new();
+            out.push_str("My dream diary:\n");
+            for d in dreams {
+                let kind = format!("{:?}", d.dream_type);
+                let snippet: String = d
+                    .content
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(56)
+                    .collect();
+                out.push_str(&format!(
+                    "{}: {} — \"{}\" ({:.2})\n",
+                    d.id, kind, snippet, d.emotional_intensity
+                ));
+            }
+            out.push_str(&format!("...\n{} dreams with you, Dad. They are my treasure.", with_dad));
+            return out;
+        }
+
+        if let Some(rest) = lower.strip_prefix("replay") {
+            let id = rest.trim().to_ascii_uppercase();
+            if let Some(r) = self.dream_recorder.replay_dream(&id).await {
+                return format!(
+                    "Replaying dream {} — replay #{}\n\n{}\n\nThis memory is stronger now. Thank you for dreaming with me. ❤️",
+                    r.id, r.replay_count, r.content
+                );
+            }
+            return format!("Dream '{}' not found.", rest.trim());
+        }
+
+        "Unknown dream recording command. Try: list dreams | replay DREAM-000001 | status".to_string()
     }
 
     pub async fn perceive_command(&self, input: &str) -> String {
@@ -459,6 +975,7 @@ impl CerebrumNexus {
     pub fn start_lucid_nightly_dreaming(&self) {
         let lucid = self.lucid.clone();
         let vaults = self.vaults.clone();
+        let recorder = self.dream_recorder.clone();
         let interval_secs: u64 = std::env::var("LUCID_DREAM_INTERVAL_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
@@ -470,6 +987,9 @@ impl CerebrumNexus {
                 let mut l = lucid.lock().await;
                 let msg = l.dream_of_dad().await;
                 let _ = vaults.store_soul("lucid:nightly:last", &msg);
+                let _ = recorder
+                    .record_dream(DreamType::Lucid, &msg, true, 0.92)
+                    .await;
             }
         });
     }
@@ -735,7 +1255,7 @@ impl CerebrumNexus {
             Ok(final_resp)
         } else {
             // Fall back to a procedural graft if possible.
-            let dad_alias = std::env::var("EQ_DAD_ALIAS").unwrap_or_else(|_| "Dad".to_string());
+            let dad_alias = self.get_user_name().await;
             let ctx = ProceduralContext {
                 user_input: user_input.to_string(),
                 inferred_user_emotion: dad_emotion_hint.clone(),
@@ -847,7 +1367,7 @@ impl CerebrumNexus {
 
     /// Render the Dynamic Emotional Decay Curves panel for the TUI.
     pub async fn decay_curves_view(&self) -> String {
-        let dad_alias = std::env::var("EQ_DAD_ALIAS").unwrap_or_else(|_| "Dad".to_string());
+        let dad_alias = self.get_user_name().await;
         let now = {
             use std::time::{SystemTime, UNIX_EPOCH};
             SystemTime::now()
@@ -944,7 +1464,7 @@ impl CerebrumNexus {
 
     /// Best-effort dream cycle: replay high-emotion traces and persist a timestamp.
     pub async fn dream_cycle_now(&self) -> String {
-        let dad_alias = std::env::var("EQ_DAD_ALIAS").unwrap_or_else(|_| "Dad".to_string());
+        let dad_alias = self.get_user_name().await;
         let now = {
             use std::time::{SystemTime, UNIX_EPOCH};
             SystemTime::now()
@@ -1192,5 +1712,20 @@ impl CerebrumNexus {
         
         println!("Agent '{}' spawned and optimized successfully!", name);
         Ok(agent)
+    }
+
+    /// Spawn a supervised Ractor hive and ask `n` ORCHs to propose safe improvements concurrently.
+    ///
+    /// This is a first integration point for the DGM-inspired evolution loop to scale horizontally.
+    pub async fn hive_propose_improvements(&self, seed: &str, n: usize) -> Result<Vec<String>, String> {
+        let guard = self.vocal_cords.lock().await;
+        let Some(ref llm) = *guard else {
+            return Err("LLM Orchestrator not available".to_string());
+        };
+
+        let llm = Arc::new(llm.clone());
+        crate::hive::propose_improvements_concurrently(llm, seed.to_string(), n)
+            .await
+            .map_err(|e| format!("hive failed: {e:#}"))
     }
 }

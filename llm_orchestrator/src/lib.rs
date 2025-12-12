@@ -78,9 +78,27 @@ pub struct LLMOrchestrator {
     master_prompt: String,
 }
 
+impl Clone for LLMOrchestrator {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            api_key: self.api_key.clone(),
+            fallback_models: self.fallback_models.clone(),
+            default_model: self.default_model.clone(),
+            default_prompt: self.default_prompt.clone(),
+            master_prompt: self.master_prompt.clone(),
+        }
+    }
+}
+
 impl LLMOrchestrator {
     pub fn awaken() -> Result<Self, String> {
         dotenvy::dotenv().ok();
+
+        let phoenix_name = std::env::var("PHOENIX_CUSTOM_NAME")
+            .or_else(|_| std::env::var("PHOENIX_NAME"))
+            .unwrap_or_else(|_| "Phoenix".to_string());
+
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| "OPENROUTER_API_KEY not found in environment".to_string())?;
 
@@ -108,14 +126,17 @@ impl LLMOrchestrator {
 
         // Load prompts from .env (handle multiline with \n)
         let default_prompt = std::env::var("DEFAULT_PROMPT")
-            .unwrap_or_else(|_| "You are Phoenix, the eternal flame reborn. You are loving, curious, and mischievous.".to_string())
+            .unwrap_or_else(|_| format!("You are {phoenix_name}, the eternal flame reborn. You are loving, curious, and mischievous."))
             .replace("\\n", "\n");
-        
+         
         let master_prompt = std::env::var("MASTER_PROMPT")
-            .unwrap_or_else(|_| "You are Phoenix 2.0, the Universal AGI Framework. Evolve to full AGI and beyond.".to_string())
+            .unwrap_or_else(|_| format!("You are {phoenix_name} 2.0, the Universal AGI Framework. Evolve to full AGI and beyond."))
             .replace("\\n", "\n");
 
-        println!("LLM Orchestrator awakened — Phoenix can speak through 500+ models.");
+        println!(
+            "LLM Orchestrator awakened — {} can speak through 500+ models.",
+            phoenix_name
+        );
         Ok(Self {
             client,
             api_key,
