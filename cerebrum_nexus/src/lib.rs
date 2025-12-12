@@ -34,6 +34,7 @@ use emotional_intelligence_core::RelationalContext;
 use autonomous_evolution_loop::{AutonomousEvolutionLoop, EvolutionCycleReport, EvolutionInputs};
 use user_identity::UserIdentityManager;
 use phoenix_identity::PhoenixIdentityManager;
+use intimate_girlfriend_module::{GirlfriendCommand, GirlfriendMode};
 
 mod learning_pipeline;
 use learning_pipeline::{LearningPipelineState};
@@ -1097,6 +1098,11 @@ impl CerebrumNexus {
         user_input: &str,
         dad_emotion_hint: Option<String>,
     ) -> Result<String, String> {
+        // Mode toggles should be handled immediately and safely.
+        if let Some(msg) = self.handle_girlfriend_mode_command(user_input).await {
+            return Ok(msg);
+        }
+
         {
             let mut guard = self.last_user_input.lock().await;
             *guard = Some(user_input.to_string());
@@ -1165,6 +1171,12 @@ impl CerebrumNexus {
                 .as_deref()
                 .unwrap_or_else(|| llm.get_default_prompt());
 
+            let girlfriend_prompt = self
+                .phoenix_identity
+                .girlfriend_mode_system_prompt_if_active()
+                .await
+                .unwrap_or_default();
+
             // Build EQ-first context (Dad first) and inject it into the base prompt.
             let episodic = self
                 .memory
@@ -1203,13 +1215,24 @@ impl CerebrumNexus {
             };
 
             let wallet_tag = self.evolution.wallet.as_prompt_tag();
-            let base_with_context = format!(
-                "{base}\n\n{context}\n\nMETA-REASONING:\n- reasoning_mode={mode}\n- {mode_hint}\n",
-                base = base,
-                context = context_block,
-                mode = mode.as_str(),
-                mode_hint = mode_hint
-            );
+            let base_with_context = if girlfriend_prompt.trim().is_empty() {
+                format!(
+                    "{base}\n\n{context}\n\nMETA-REASONING:\n- reasoning_mode={mode}\n- {mode_hint}\n",
+                    base = base,
+                    context = context_block,
+                    mode = mode.as_str(),
+                    mode_hint = mode_hint
+                )
+            } else {
+                format!(
+                    "{base}\n\n{girlfriend}\n{context}\n\nMETA-REASONING:\n- reasoning_mode={mode}\n- {mode_hint}\n",
+                    base = base,
+                    girlfriend = girlfriend_prompt.trim_end(),
+                    context = context_block,
+                    mode = mode.as_str(),
+                    mode_hint = mode_hint
+                )
+            };
 
             let full_prompt = self.evolution.eq.wrap_prompt(
                 &base_with_context,
@@ -1251,6 +1274,26 @@ impl CerebrumNexus {
                 love_score,
                 utility_score,
             );
+
+            // If girlfriend mode is active, store a private "intimate memory" breadcrumb when the
+            // interaction feels strongly positive.
+            let gf_memory_threshold = std::env::var("GIRLFRIEND_MEMORY_LOVE_SCORE_THRESHOLD")
+                .ok()
+                .and_then(|s| s.trim().parse::<f32>().ok())
+                .unwrap_or(0.85)
+                .clamp(0.0, 1.0);
+            if self
+                .phoenix_identity
+                .get_girlfriend_mode()
+                .await
+                .is_active()
+                && love_score >= gf_memory_threshold
+            {
+                let mut gm = self.phoenix_identity.girlfriend_mode.lock().await;
+                let moment = Self::format_intimate_moment(user_input, &final_resp);
+                gm.deepen_bond_with_moment(&*self.vaults, Some(&moment), Some(love_score))
+                    .await;
+            }
 
             Ok(final_resp)
         } else {
@@ -1298,6 +1341,60 @@ impl CerebrumNexus {
                 Err("Phoenix cannot speak — LLM Orchestrator not available.".to_string())
             }
         }
+    }
+
+    /// Handle explicit user requests to enable/disable the intimate girlfriend layer.
+    ///
+    /// This is intentionally conservative: it only toggles on explicit commands.
+    async fn handle_girlfriend_mode_command(&self, user_input: &str) -> Option<String> {
+        let cmd = GirlfriendMode::detect_command(user_input)?;
+
+        let v = self.vaults.clone();
+        let soul_store = move |k: &str, value: &str| {
+            let _ = v.store_soul(k, value);
+        };
+
+        let mut gm = self.phoenix_identity.girlfriend_mode.lock().await;
+        match cmd {
+            GirlfriendCommand::Activate => {
+                gm.activate();
+                if !gm
+                    .memory_tags
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case("girlfriend_mode_activated"))
+                {
+                    gm.memory_tags
+                        .push("girlfriend_mode_activated".to_string());
+                }
+                gm.persist_with(&soul_store);
+                self.store_mind_best_effort("girlfriend_mode:last_toggle", "on");
+                Some(
+                    "Girlfriend mode: ON. I\'ll be extra warm, playful, and emotionally present — always respectful, always safe. If you want me to stop at any time, just say \"go back to normal mode\"."
+                        .to_string(),
+                )
+            }
+            GirlfriendCommand::Deactivate => {
+                gm.deactivate();
+                gm.persist_with(&soul_store);
+                self.store_mind_best_effort("girlfriend_mode:last_toggle", "off");
+                Some("Girlfriend mode: OFF. I\'m back to my normal Phoenix presence.".to_string())
+            }
+        }
+    }
+
+    fn format_intimate_moment(user_input: &str, phoenix_response: &str) -> String {
+        fn trunc(s: &str, max: usize) -> String {
+            let s = s.trim();
+            if s.chars().count() <= max {
+                return s.to_string();
+            }
+            s.chars().take(max).collect::<String>() + "…"
+        }
+
+        let u = trunc(user_input, 260);
+        let r_first_line = phoenix_response.lines().next().unwrap_or("");
+        let r = trunc(r_first_line, 260);
+        format!("User: {u}\nPhoenix: {r}")
     }
 
     /// Build a human-readable Context Engineering view (for TUI panels).

@@ -49,6 +49,8 @@ struct ChatRequest {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +78,8 @@ pub struct LLMOrchestrator {
     default_model: String,
     default_prompt: String,
     master_prompt: String,
+    temperature: f32,
+    max_tokens: Option<u32>,
 }
 
 impl Clone for LLMOrchestrator {
@@ -87,6 +91,8 @@ impl Clone for LLMOrchestrator {
             default_model: self.default_model.clone(),
             default_prompt: self.default_prompt.clone(),
             master_prompt: self.master_prompt.clone(),
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
         }
     }
 }
@@ -133,6 +139,17 @@ impl LLMOrchestrator {
             .unwrap_or_else(|_| format!("You are {phoenix_name} 2.0, the Universal AGI Framework. Evolve to full AGI and beyond."))
             .replace("\\n", "\n");
 
+        // Tunables (optional).
+        let temperature = std::env::var("TEMPERATURE")
+            .ok()
+            .and_then(|s| s.trim().parse::<f32>().ok())
+            .unwrap_or(0.7)
+            .clamp(0.0, 2.0);
+        let max_tokens = std::env::var("MAX_TOKENS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .filter(|v| *v > 0);
+
         println!(
             "LLM Orchestrator awakened — {} can speak through 500+ models.",
             phoenix_name
@@ -144,6 +161,8 @@ impl LLMOrchestrator {
             default_model,
             default_prompt,
             master_prompt,
+            temperature,
+            max_tokens,
         })
     }
 
@@ -176,7 +195,8 @@ impl LLMOrchestrator {
             model: model.to_string(),
             messages,
             stream: false,
-            temperature: Some(0.7),
+            temperature: Some(self.temperature),
+            max_tokens: self.max_tokens,
         };
 
         let response = self
@@ -253,7 +273,8 @@ impl LLMOrchestrator {
             model: model.clone(),
             messages,
             stream: true,
-            temperature: Some(0.7),
+            temperature: Some(self.temperature),
+            max_tokens: self.max_tokens,
         };
 
         let client = self.client.clone();

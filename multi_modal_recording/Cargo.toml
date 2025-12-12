@@ -1,0 +1,50 @@
+[package]
+name = "multi_modal_recording"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# Default build is dependency-light and uses stub implementations.
+default = []
+
+# Enable real audio I/O (cpal + rodio).
+audio = ["dep:cpal", "dep:rodio"]
+
+# Enable webcam capture (nokhwa).
+video = ["dep:nokhwa"]
+
+# Enable wake-word / speech recognition backends.
+speech-vosk = ["dep:vosk"]
+speech-whisper = ["dep:whisper-rs"]
+
+# Enable face detection/identification backends.
+face-rustface = ["dep:rustface"]
+face-dlib = ["dep:dlib-face-recognition"]
+
+[dependencies]
+chrono = "0.4"
+cron = "0.12"
+directories = "5"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+
+emotion_detection = { path = "../emotion_detection" }
+vital_organ_vaults = { path = "../vital_organ_vaults" }
+
+# Requested multimedia stack (kept optional behind feature flags).
+cpal = { version = "0.15", optional = true }
+rodio = { version = "0.20", default-features = true, optional = true }
+nokhwa = { version = "0.10.10", default-features = false, features = ["input-native"], optional = true }
+
+# Requested recognition stack (kept optional; native deps may be required).
+vosk = { version = "0.3.1", optional = true }
+whisper-rs = { version = "0.15.1", optional = true }
+rustface = { version = "0.1.7", optional = true }
+dlib-face-recognition = { version = "0.3.2", optional = true }
+

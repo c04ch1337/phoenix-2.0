@@ -15,6 +15,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use cerebrum_nexus::CerebrumNexus;
 use neural_cortex_strata::MemoryLayer;
 use multi_modal_perception::ModalityInput;
+use multi_modal_recording::MultiModalRecorder;
+use tokio::sync::Mutex;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum MenuItem {
@@ -53,6 +56,7 @@ impl Default for MenuItem {
 struct App {
     active_menu: MenuItem,
     cerebrum: CerebrumNexus,
+    recorder: Arc<Mutex<MultiModalRecorder>>,
     input: String,
     output: Vec<String>,
     speaking_response: String, // Current streaming LLM response
@@ -77,9 +81,14 @@ struct App {
 
 impl App {
     fn new() -> Self {
+        let cerebrum = CerebrumNexus::awaken();
+        let mut rec = MultiModalRecorder::from_env();
+        rec.attach_vaults(cerebrum.vaults.clone());
+
         Self {
             active_menu: MenuItem::Home,
-            cerebrum: CerebrumNexus::awaken(),
+            cerebrum,
+            recorder: Arc::new(Mutex::new(rec)),
             input: String::new(),
             output: vec!["PHOENIX 2.0 — Universal AGI Framework".to_string()],
             speaking_response: String::new(),
@@ -352,6 +361,10 @@ async fn handle_input(app: &mut App, input: &str) -> String {
         }
         MenuItem::Perceive => {
             let trimmed = input.trim();
+            if let Some(resp) = handle_multimodal_recording_command(app, trimmed).await {
+                app.perceive_panel = resp.clone();
+                return resp;
+            }
             let msg = if trimmed.is_empty() {
                 app.cerebrum.perceive_command("help").await
             } else {
@@ -862,7 +875,7 @@ Cerebrum Nexus: Orchestrating...
         }
         MenuItem::Perceive => {
             let panel = Paragraph::new(format!(
-                "Multi-Modal Perception\n\nEnter: help\nType: show image <url> | show audio <url> | show video <url> | text <msg>\n\nInput: {}\n\n{}",
+                "Multi-Modal Perception + Recording\n\nPerception:\n- (Enter): help\n- show image <url> | show audio <url> | show video <url> | text <msg>\n\nRecording:\n- record audio <secs>\n- record video <secs>|now\n- record now <secs>\n- schedule <cron_expr>|<purpose>\n- schedule daily <purpose>\n- enroll my voice\n- enroll my face\n- always listen on | always listen off\n- delete last recording\n- clear all recordings\n- stop listening\n\nInput: {}\n\n{}",
                 app.input, app.perceive_panel
             ))
             .block(Block::default().title("Perception").borders(Borders::ALL))
@@ -884,4 +897,162 @@ Cerebrum Nexus: Orchestrating...
         .style(Style::default().fg(Color::Magenta))
         .alignment(Alignment::Center);
     f.render_widget(footer, chunks[2]);
+}
+
+async fn handle_multimodal_recording_command(app: &mut App, input: &str) -> Option<String> {
+    let t = input.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let lower = t.to_ascii_lowercase();
+
+    // Privacy controls
+    if lower == "delete last recording" {
+        let rec = app.recorder.lock().await.clone();
+        return Some(match rec.delete_last_recording().await {
+            Ok(true) => "Last recording deleted.".to_string(),
+            Ok(false) => "No last recording found in this session.".to_string(),
+            Err(e) => format!("Delete failed: {e}"),
+        });
+    }
+    if lower == "clear all recordings" {
+        let rec = app.recorder.lock().await.clone();
+        return Some(match rec.clear_all_recordings().await {
+            Ok(n) => format!("Cleared {n} recordings."),
+            Err(e) => format!("Clear failed: {e}"),
+        });
+    }
+    if lower == "stop listening" {
+        let rec = app.recorder.lock().await.clone();
+        rec.stop_listening();
+        return Some("Always-listening stopped (best-effort).".to_string());
+    }
+
+    // Always listening toggle
+    if lower == "always listen on" {
+        let rec = app.recorder.lock().await.clone();
+        rec.start_always_listening().await;
+        return Some("Always-listening started (best-effort). Say your wake word to trigger.".to_string());
+    }
+    if lower == "always listen off" {
+        let rec = app.recorder.lock().await.clone();
+        rec.stop_listening();
+        return Some("Always-listening OFF.".to_string());
+    }
+
+    // Enrollment
+    if lower == "enroll my voice" {
+        let samples = collect_files("./data/enroll/voice").await;
+        if samples.is_empty() {
+            return Some(
+                "No voice samples found. Put audio files into ./data/enroll/voice then run: enroll my voice".to_string(),
+            );
+        }
+        let mut rec = app.recorder.lock().await;
+        return Some(match rec.enroll_user_voice(samples) {
+            Ok(()) => "Voice enrolled (model stub created).".to_string(),
+            Err(e) => format!("Enroll voice failed: {e}"),
+        });
+    }
+    if lower == "enroll my face" {
+        let images = collect_files("./data/enroll/face").await;
+        if images.is_empty() {
+            return Some(
+                "No face images found. Put image files into ./data/enroll/face then run: enroll my face".to_string(),
+            );
+        }
+        let mut rec = app.recorder.lock().await;
+        return Some(match rec.enroll_user_face(images) {
+            Ok(()) => "Face enrolled (model stub created).".to_string(),
+            Err(e) => format!("Enroll face failed: {e}"),
+        });
+    }
+
+    // Scheduling
+    if let Some(rest) = lower.strip_prefix("schedule ") {
+        // Formats:
+        // - schedule <cron_expr>|<purpose>
+        // - schedule daily <purpose>
+        let rest = rest.trim();
+        if let Some(purpose) = rest.strip_prefix("daily ") {
+            // Daily at 21:00 local-ish (cron uses UTC in this simple example; callers should use explicit cron).
+            let cron_expr = "0 0 21 * * *";
+            let rec = app.recorder.lock().await.clone();
+            rec.schedule_recording(cron_expr, purpose.trim()).await;
+            return Some(format!("Scheduled daily recording (cron='{cron_expr}') purpose='{}'", purpose.trim()));
+        }
+
+        let parts: Vec<&str> = rest.splitn(2, '|').collect();
+        if parts.len() == 2 {
+            let cron_expr = parts[0].trim();
+            let purpose = parts[1].trim();
+            if cron_expr.is_empty() || purpose.is_empty() {
+                return Some("Format: schedule <cron_expr>|<purpose>".to_string());
+            }
+            let rec = app.recorder.lock().await.clone();
+            rec.schedule_recording(cron_expr, purpose).await;
+            return Some(format!("Scheduled recording cron='{cron_expr}' purpose='{purpose}'"));
+        }
+
+        return Some("Format: schedule <cron_expr>|<purpose> OR schedule daily <purpose>".to_string());
+    }
+
+    // Recording
+    if let Some(rest) = lower.strip_prefix("record ") {
+        let rest = rest.trim();
+        // record audio 30
+        // record video now
+        // record now 30
+        let mut parts = rest.split_whitespace();
+        let mode = parts.next().unwrap_or("");
+        let arg = parts.next().unwrap_or("");
+
+        let (audio, video, secs) = match mode {
+            "audio" => (true, false, arg.parse::<u64>().ok().unwrap_or(30)),
+            "video" => {
+                if arg == "now" || arg.is_empty() {
+                    (false, true, 15)
+                } else {
+                    (false, true, arg.parse::<u64>().ok().unwrap_or(15))
+                }
+            }
+            "now" => (true, true, arg.parse::<u64>().ok().unwrap_or(30)),
+            _ => return Some("Formats: record audio <secs> | record video <secs>|now | record now <secs>".to_string()),
+        };
+
+        let rec = app.recorder.lock().await.clone();
+        let rec = rec.clone_with_modes(audio, video);
+        return Some(match rec.start_on_demand(secs).await {
+            Ok(p) => {
+                let em = rec.last_emotion().await;
+                if let Some(s) = em {
+                    format!(
+                        "Recording saved (encrypted): {}\nDad is feeling: {:?} ({:.0}%)",
+                        p.display(),
+                        s.primary_emotion,
+                        s.confidence * 100.0
+                    )
+                } else {
+                    format!("Recording saved (encrypted): {}", p.display())
+                }
+            }
+            Err(e) => format!("Record failed: {e}"),
+        });
+    }
+
+    None
+}
+
+async fn collect_files(dir: &str) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let Ok(mut rd) = tokio::fs::read_dir(dir).await else {
+        return out;
+    };
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        let p = entry.path();
+        if p.is_file() {
+            out.push(p);
+        }
+    }
+    out
 }

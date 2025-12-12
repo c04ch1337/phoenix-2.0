@@ -1,6 +1,7 @@
 use chrono::Utc;
 use common_types::EvolutionEntry;
 use dotenvy;
+use intimate_girlfriend_module::GirlfriendMode;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -130,6 +131,8 @@ impl PhoenixIdentity {
 
 pub struct PhoenixIdentityManager {
     identity: Arc<Mutex<PhoenixIdentity>>,
+    /// Intimate girlfriend mode state (toggleable personality layer).
+    pub girlfriend_mode: Arc<Mutex<GirlfriendMode>>,
     soul_recall: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
 }
 
@@ -143,14 +146,48 @@ impl PhoenixIdentityManager {
             let sr = soul_recall.clone();
             move |k| (sr)(k)
         });
+
+        // Girlfriend mode state is persisted in the Soul Vault (encrypted).
+        // Default affection level is intentionally warm but bounded.
+        let girlfriend_mode = GirlfriendMode::awaken_from_soul({
+            let sr = soul_recall.clone();
+            move |k| (sr)(k)
+        });
         Self {
             identity: Arc::new(Mutex::new(identity)),
+            girlfriend_mode: Arc::new(Mutex::new(girlfriend_mode)),
             soul_recall,
         }
     }
 
     pub async fn get_identity(&self) -> PhoenixIdentity {
         self.identity.lock().await.clone()
+    }
+
+    pub async fn get_girlfriend_mode(&self) -> GirlfriendMode {
+        self.girlfriend_mode.lock().await.clone()
+    }
+
+    pub async fn set_girlfriend_mode_active<S>(&self, active: bool, soul_store: S)
+    where
+        S: Fn(&str, &str) + Send + Sync,
+    {
+        let mut gm = self.girlfriend_mode.lock().await;
+        if active {
+            gm.activate();
+        } else {
+            gm.deactivate();
+        }
+        gm.persist_with(soul_store);
+    }
+
+    pub async fn girlfriend_mode_system_prompt_if_active(&self) -> Option<String> {
+        let gm = self.girlfriend_mode.lock().await;
+        if gm.is_active() {
+            Some(gm.system_prompt())
+        } else {
+            None
+        }
     }
 
     /// Backward-compatible rename (reason defaults to `user_request`).

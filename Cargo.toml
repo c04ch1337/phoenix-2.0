@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "common_types",
+    "intimate_girlfriend_module",
     "phoenix-tui",
     "cerebrum_nexus",
     "self_critic",
@@ -10,6 +11,8 @@ members = [
     "dream_recording",
     "dream_healing",
     "multi_modal_perception",
+    "multi_modal_recording",
+    "emotion_detection",
     "context_engine",
     "emotional_intelligence_core",
     "curiosity_engine",
@@ -35,4 +38,5 @@ members = [
     "user_identity",
     "phoenix_identity",
     "transcendence_archetypes",
+    "extensions/relationship_dynamics",
 ]

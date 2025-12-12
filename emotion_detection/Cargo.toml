@@ -1,0 +1,25 @@
+[package]
+name = "emotion_detection"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# Default build is heuristic/stub based (no heavyweight ML runtime).
+default = []
+
+# Optional (planned) backends.
+text-rust-bert = ["dep:rust-bert"]
+face-onnx-tract = ["dep:tract-onnx"]
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+# Optional ML backends (off by default; may require additional system deps and model files).
+rust-bert = { version = "0.23", optional = true }
+tract-onnx = { version = "0.21", optional = true }
+

@@ -40,6 +40,7 @@ self_preservation_instinct = { path = "../self_preservation_instinct" }
 asi_wallet_identity = { path = "../asi_wallet_identity" }
 user_identity = { path = "../user_identity" }
 phoenix_identity = { path = "../phoenix_identity" }
+intimate_girlfriend_module = { path = "../intimate_girlfriend_module" }
 common_types = { path = "../common_types" }
 evolution_pipeline = { path = "../evolution_pipeline" }
 
