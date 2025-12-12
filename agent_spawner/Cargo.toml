@@ -1,0 +1,15 @@
+[package]
+name = "agent_spawner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+octocrab = "0.38"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dotenvy = "0.15"
+uuid = { version = "1.0", features = ["v4"] }
+git2 = "0.18"
+tempfile = "3.10"
+llm_orchestrator = { path = "../llm_orchestrator" }

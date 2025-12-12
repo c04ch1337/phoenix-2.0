@@ -1,0 +1,11 @@
+[package]
+name = "curiosity_engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dotenvy = "0.15"
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+synaptic_tuning_fibers = { path = "../synaptic_tuning_fibers" }
+

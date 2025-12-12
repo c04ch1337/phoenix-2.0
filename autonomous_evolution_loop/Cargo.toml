@@ -1,0 +1,18 @@
+[package]
+name = "autonomous_evolution_loop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+chrono = "0.4"
+curiosity_engine = { path = "../curiosity_engine" }
+self_preservation_instinct = { path = "../self_preservation_instinct" }
+emotional_intelligence_core = { path = "../emotional_intelligence_core" }
+asi_wallet_identity = { path = "../asi_wallet_identity" }
+evolutionary_helix_core = { path = "../evolutionary_helix_core" }
+nervous_pathway_network = { path = "../nervous_pathway_network" }
+neural_cortex_strata = { path = "../neural_cortex_strata" }
+vital_organ_vaults = { path = "../vital_organ_vaults" }
+vital_pulse_monitor = { path = "../vital_pulse_monitor" }
+

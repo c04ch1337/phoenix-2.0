@@ -7,6 +7,8 @@ edition = "2024"
 ratatui = "0.25"
 crossterm = "0.27"
 tokio = { version = "1.0", features = ["full"] }
+uuid = { version = "1.0", features = ["v4"] }
+serde_json = "1.0"
 cerebrum_nexus = { path = "../cerebrum_nexus" }
 neural_cortex_strata = { path = "../neural_cortex_strata" }
 vital_organ_vaults = { path = "../vital_organ_vaults" }

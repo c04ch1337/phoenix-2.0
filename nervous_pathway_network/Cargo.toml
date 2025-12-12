@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 dotenvy = "0.15"
+tokio = { version = "1.0", features = ["sync"] }
+hyperspace_cache = { path = "../hyperspace_cache" }
+chrono = { version = "0.4", features = ["serde"] }

@@ -4,10 +4,29 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.0", features = ["sync"] }
+tokio = { version = "1.0", features = ["sync", "time", "rt", "macros"] }
 uuid = { version = "1.0", features = ["v4"] }
 dotenvy = "0.15"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+url = "2"
+json-patch = "3"
+tracing = "0.1"
 nervous_pathway_network = { path = "../nervous_pathway_network" }
 limb_extension_grafts = { path = "../limb_extension_grafts" }
 vital_pulse_monitor = { path = "../vital_pulse_monitor" }
 llm_orchestrator = { path = "../llm_orchestrator" }
+agent_spawner = { path = "../agent_spawner" }
+caos = { path = "../caos" }
+neural_cortex_strata = { path = "../neural_cortex_strata" }
+vital_organ_vaults = { path = "../vital_organ_vaults" }
+vascular_integrity_system = { path = "../vascular_integrity_system" }
+evolutionary_helix_core = { path = "../evolutionary_helix_core" }
+autonomous_evolution_loop = { path = "../autonomous_evolution_loop" }
+emotional_intelligence_core = { path = "../emotional_intelligence_core" }
+curiosity_engine = { path = "../curiosity_engine" }
+self_preservation_instinct = { path = "../self_preservation_instinct" }
+asi_wallet_identity = { path = "../asi_wallet_identity" }

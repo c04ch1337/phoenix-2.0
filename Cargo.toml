@@ -3,6 +3,11 @@ resolver = "3"
 members = [
     "phoenix-tui",
     "cerebrum_nexus",
+    "emotional_intelligence_core",
+    "curiosity_engine",
+    "self_preservation_instinct",
+    "asi_wallet_identity",
+    "autonomous_evolution_loop",
     "neural_cortex_strata",
     "vital_organ_vaults",
     "evolutionary_helix_core",
@@ -10,6 +15,11 @@ members = [
     "nervous_pathway_network",
     "vascular_integrity_system",
     "vital_pulse_monitor",
+    "vital_pulse_collector",
     "limb_extension_grafts",
     "llm_orchestrator",
+    "synaptic_pulse_distributor",
+    "agent_spawner",
+    "caos",
+    "hyperspace_cache",
 ]
