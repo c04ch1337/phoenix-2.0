@@ -374,8 +374,10 @@ async fn handle_input(app: &mut App, input: &str) -> String {
             msg
         }
         MenuItem::Tools => {
-            let tool = app.cerebrum.self_create_tool(input).await;
-            format!("New tool grafted: {}", tool)
+            match app.cerebrum.create_tool(input, input).await {
+                Ok(msg) => format!("New tool created: {}", msg),
+                Err(e) => format!("Tool creation blocked: {}", e),
+            }
         }
         MenuItem::Network => {
             app.cerebrum.connect_anything(input).await
@@ -579,7 +581,7 @@ async fn handle_input(app: &mut App, input: &str) -> String {
                 return "Format: agent_name:description or just description".to_string();
             }
             
-            match app.cerebrum.spawn_agent(&name, &description, None).await {
+            match app.cerebrum.create_agent(&name, &description, None).await {
                 Ok(agent) => {
                     format!("Agent '{}' spawned on GitHub: {}", agent.name, agent.repo_url)
                 }

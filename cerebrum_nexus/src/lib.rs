@@ -21,6 +21,8 @@ use dream_recording::{DreamRecordingModule, DreamType};
 use dream_healing::{DadEmotionalState, DreamHealingModule};
 use multi_modal_perception::{ModalityInput, MultiModalProcessor};
 
+use evolution_pipeline::{CreationKind, GitHubEnforcer};
+
 use context_engine::{ContextEngine, ContextLayer, ContextMemory, ContextRequest, DadMemory};
 use emotional_intelligence_core::emotional_decay::{classify_memory, hours_since_unix, retention_multiplier, MemoryType};
 
@@ -1024,6 +1026,65 @@ impl CerebrumNexus {
         helix.self_create_tool(spec)
     }
 
+    /// Create a new Tool and enforce the GitHub-first PR approval flow.
+    ///
+    /// This is intentionally strict: if the local tools repo path is not configured,
+    /// Phoenix refuses to "bring the tool to life".
+    pub async fn create_tool(&self, name: &str, description: &str) -> Result<String, String> {
+        dotenvy::dotenv().ok();
+
+        fn kebab_case(s: &str) -> String {
+            let mut out = String::new();
+            let mut last_dash = false;
+            for ch in s.trim().chars() {
+                let lc = ch.to_ascii_lowercase();
+                let is_sep = lc == ' ' || lc == '_' || lc == '-' || lc == '.' || lc == '/';
+                let is_alnum = lc.is_ascii_alphanumeric();
+                if is_alnum {
+                    out.push(lc);
+                    last_dash = false;
+                } else if is_sep {
+                    if !out.is_empty() && !last_dash {
+                        out.push('-');
+                        last_dash = true;
+                    }
+                }
+            }
+            while out.ends_with('-') {
+                out.pop();
+            }
+            if out.is_empty() { "tool".to_string() } else { out }
+        }
+
+        let tools_repo_path = std::env::var("PHOENIX_TOOLS_REPO_PATH").map_err(|_| {
+            "PHOENIX_TOOLS_REPO_PATH is not set; Phoenix will not create new tools without a GitHub-first repo checkout for Dad to review.".to_string()
+        })?;
+
+        let repo_path = std::path::Path::new(&tools_repo_path);
+
+        // Ensure there's a tangible artifact to review (even if the tool is just a spec today).
+        let creations_dir = repo_path.join("phoenix_creations").join("tools");
+        std::fs::create_dir_all(&creations_dir)
+            .map_err(|e| format!("failed to create tools creation dir: {e}"))?;
+        let record_path = creations_dir.join(format!("{}.md", kebab_case(name)));
+        let record = format!(
+            "# Tool Creation: {name}\n\n{description}\n\nCreated by Phoenix; requires CI + Dad PR approval before use.\n"
+        );
+        std::fs::write(&record_path, record)
+            .map_err(|e| format!("failed to write tool record {}: {e}", record_path.display()))?;
+
+        let enforcer = GitHubEnforcer::from_env();
+        let approved_sha = enforcer
+            .create_and_enforce_creation(repo_path, name, description, CreationKind::Tool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Only after enforcement completes do we graft the tool into the live runtime.
+        let mut grafts = self.grafts.lock().await;
+        let msg = grafts.graft_tool(name, "github_first_approved").await;
+        Ok(format!("{} (approved_commit={})", msg, approved_sha))
+    }
+
     pub async fn quantum_evolve(&self) -> String {
         let mut helix = self.helix.lock().await;
         helix.quantum_evolve()
@@ -1809,6 +1870,19 @@ impl CerebrumNexus {
         
         println!("Agent '{}' spawned and optimized successfully!", name);
         Ok(agent)
+    }
+
+    /// Backward-compatible alias for the new GitHub-first agent creation flow.
+    ///
+    /// This returns only after the PR has passed CI and received Dad's approval (and merged,
+    /// if auto-merge is enabled). See [`evolution_pipeline.github_enforcement::GitHubEnforcer`](evolution_pipeline/src/github_enforcement.rs:116).
+    pub async fn create_agent(
+        &self,
+        name: &str,
+        description: &str,
+        tier: Option<AgentTier>,
+    ) -> Result<SpawnedAgent, String> {
+        self.spawn_agent(name, description, tier).await
     }
 
     /// Spawn a supervised Ractor hive and ask `n` ORCHs to propose safe improvements concurrently.

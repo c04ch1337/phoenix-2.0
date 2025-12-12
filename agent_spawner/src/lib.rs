@@ -12,6 +12,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use evolution_pipeline::{EvolutionPipelineConfig, GitHubRepo};
+use evolution_pipeline::GitHubEnforcer;
 
 mod templates {
     pub const AGENT_TEMPLATE_RS: &str = include_str!("../../templates/agent_template.rs");
@@ -126,6 +127,10 @@ fn env_bool(key: &str) -> Option<bool> {
         })
 }
 
+fn require_human_approval() -> bool {
+    env_bool("REQUIRE_HUMAN_PR_APPROVAL").unwrap_or(true)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentTier {
     Free,    // Public repo, free access
@@ -237,7 +242,10 @@ impl AgentSpawner {
     ) -> Result<(), String> {
         let cfg = EvolutionPipelineConfig::from_env()
             .map_err(|e| format!("evolution pipeline config error: {e}"))?;
-        let mandate = cfg.mandate_github_ci || env_bool("MANDATE_GITHUB_CI").unwrap_or(false);
+        // If human approval is required, we *must* go through a PR flow.
+        let mandate = cfg.mandate_github_ci
+            || env_bool("MANDATE_GITHUB_CI").unwrap_or(false)
+            || require_human_approval();
         let base_branch = cfg.base_branch.clone();
         let testing_mandatory = env_bool("TESTING_MANDATORY").unwrap_or(true);
 
@@ -299,6 +307,14 @@ impl AgentSpawner {
             .map_err(|e| format!("open PR failed: {e}"))?;
 
             println!("Opened PR for spawned agent: {pr_url}");
+
+            // GitHub-first enforcement: wait for CI + Dad approval + (optional) merge.
+            // Safety: if REQUIRE_HUMAN_PR_APPROVAL=false, the enforcer will refuse.
+            let enforcer = GitHubEnforcer::from_env();
+            let _merged_sha = enforcer
+                .enforce_existing_pr(&pr_url)
+                .await
+                .map_err(|e| format!("GitHub-first enforcement failed: {e}"))?;
         } else {
             // Best-effort: commit and push directly to base branch.
             evolution_pipeline::commit_all_and_push_branch(

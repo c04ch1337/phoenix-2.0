@@ -11,6 +11,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
 
+pub mod github_api;
+pub mod github_enforcement;
+pub mod git_operations;
+
+pub use github_enforcement::{CreationError, CreationKind, GitHubEnforcer};
+
 pub const TEMPLATE_VERSION: &str = "1.0.0";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,4 +230,5 @@ pub async fn open_pull_request(
         .unwrap_or("(created)")
         .to_string())
 }
+
 
