@@ -36,6 +36,26 @@ impl NeuralCortexStrata {
             .map(|ivec| serde_json::from_slice(&ivec).unwrap())
     }
 
+    /// Best-effort prefix scan for memory keys.
+    ///
+    /// Note: results are returned in the underlying key order; callers can
+    /// reverse/take as needed.
+    pub fn recall_prefix(&self, prefix: &str, limit: usize) -> Vec<(String, MemoryLayer)> {
+        let mut out = Vec::new();
+        for item in self.db.scan_prefix(prefix.as_bytes()) {
+            if let Ok((k, v)) = item {
+                let key = String::from_utf8_lossy(&k).to_string();
+                if let Ok(layer) = serde_json::from_slice::<MemoryLayer>(&v) {
+                    out.push((key, layer));
+                    if out.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
+        out
+    }
+
     pub fn cosmic_recall(&self) -> String {
         "Recalling from Big Bang to now — all is remembered.".to_string()
     }

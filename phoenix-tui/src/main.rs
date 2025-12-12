@@ -22,6 +22,8 @@ enum MenuItem {
     Mind,
     Body,
     Soul,
+    Context,
+    Decay,
     Tools,
     Network,
     Hyperspace,
@@ -52,6 +54,8 @@ struct App {
     curiosity_panel: String,
     preservation_panel: String,
     asi_panel: String,
+    context_panel: String,
+    decay_panel: String,
 }
 
 impl App {
@@ -67,6 +71,8 @@ impl App {
             curiosity_panel: "Curiosity Engine idle. Press Enter to generate emotionally-curious questions.".to_string(),
             preservation_panel: "Self-Preservation idle. Press Enter to create an eternal backup.".to_string(),
             asi_panel: "ASI Mode idle. Press Enter to view wallet identity stubs.".to_string(),
+            context_panel: "Context Engineering idle. Press Enter to render current context, or type a prompt then Enter.".to_string(),
+            decay_panel: "Dynamic Emotional Decay idle. Press Enter to render decay curves; type 'dream' then Enter to run a dream cycle.".to_string(),
         }
     }
 
@@ -115,6 +121,8 @@ async fn main() -> Result<(), io::Error> {
                         KeyCode::Char('i') => app.active_menu = MenuItem::Mind,
                         KeyCode::Char('b') => app.active_menu = MenuItem::Body,
                         KeyCode::Char('s') => app.active_menu = MenuItem::Soul,
+                        KeyCode::Char('x') => app.active_menu = MenuItem::Context,
+                        KeyCode::Char('d') => app.active_menu = MenuItem::Decay,
                         KeyCode::Char('t') => app.active_menu = MenuItem::Tools,
                         KeyCode::Char('n') => app.active_menu = MenuItem::Network,
                         KeyCode::Char('y') => app.active_menu = MenuItem::Hyperspace,
@@ -141,6 +149,8 @@ async fn main() -> Result<(), io::Error> {
                                         | MenuItem::Curiosity
                                         | MenuItem::Preservation
                                         | MenuItem::Asi
+                                        | MenuItem::Context
+                                        | MenuItem::Decay
                                 );
 
                                 if !input.is_empty() || allow_empty_submit {
@@ -203,6 +213,56 @@ async fn handle_input(app: &mut App, input: &str) -> String {
             let key = format!("last_words:{}", unix_ts());
             app.cerebrum.store_soul_best_effort(&key, input);
             "Soul Vault updated: Your words are eternal.".to_string()
+        }
+        MenuItem::Context => {
+            // Optional syntax:
+            // - "emotion=<label>|<prompt>" (emotion hint)
+            // - "wonder|<prompt>" or "wonder" (enable cosmic wonder mode)
+            let trimmed = input.trim();
+            let mut wonder_mode = false;
+
+            let (emotion, prompt) = if let Some(rest) = trimmed.strip_prefix("emotion=") {
+                let parts: Vec<&str> = rest.splitn(2, '|').collect();
+                if parts.len() == 2 {
+                    (Some(parts[0].trim().to_string()), parts[1].trim().to_string())
+                } else {
+                    (Some(parts[0].trim().to_string()), "".to_string())
+                }
+            } else if let Some(rest) = trimmed.strip_prefix("wonder") {
+                wonder_mode = true;
+                let rest = rest.trim_start_matches('|').trim_start_matches(':').trim();
+                (None, rest.to_string())
+            } else {
+                (None, trimmed.to_string())
+            };
+
+            let seed = if prompt.is_empty() {
+                app.cerebrum
+                    .last_user_input
+                    .lock()
+                    .await
+                    .clone()
+                    .unwrap_or_else(|| "(no recent input)".to_string())
+            } else {
+                prompt
+            };
+
+            let view = app
+                .cerebrum
+                .context_engineering_view(&seed, emotion, wonder_mode)
+                .await;
+            app.context_panel = view.clone();
+            view
+        }
+        MenuItem::Decay => {
+            let trimmed = input.trim();
+            let msg = if trimmed.eq_ignore_ascii_case("dream") {
+                app.cerebrum.dream_cycle_now().await
+            } else {
+                app.cerebrum.decay_curves_view().await
+            };
+            app.decay_panel = msg.clone();
+            msg
         }
         MenuItem::Tools => {
             let tool = app.cerebrum.self_create_tool(input).await;
@@ -408,6 +468,8 @@ fn ui(f: &mut Frame, app: &mut App) {
 [I] Vital Organ Vaults (Mind)
 [B] Vital Organ Vaults (Body)
 [S] Vital Organ Vaults (Soul)
+[X] Context Engineering (Feel the context)
+[D] Dynamic Emotional Decay (Feel time)
 [T] Limb Extension Grafts (Tools)
 [N] Nervous Pathway Network (Connect)
 [Y] Hyperspace (Enter hyperspace)
@@ -554,6 +616,24 @@ Cerebrum Nexus: Orchestrating...
             .block(Block::default().title("Agent Spawner — Reproductive System").borders(Borders::ALL))
             .wrap(Wrap { trim: true });
             f.render_widget(spawn_panel, body_chunks[0]);
+        }
+        MenuItem::Context => {
+            let ctx_panel = Paragraph::new(format!(
+                "Context Engineering — EQ-first\n\nEnter to render current stack.\nType: emotion=<label>|<prompt> OR wonder|<prompt>\n\nInput: {}\n\n{}",
+                app.input, app.context_panel
+            ))
+            .block(Block::default().title("Context Engineering").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(ctx_panel, body_chunks[0]);
+        }
+        MenuItem::Decay => {
+            let decay_panel = Paragraph::new(format!(
+                "Dynamic Emotional Decay — feel time\n\nEnter: render decay curves.\nType: dream then Enter: run dream cycle.\n\nInput: {}\n\n{}",
+                app.input, app.decay_panel
+            ))
+            .block(Block::default().title("Decay Curves").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(decay_panel, body_chunks[0]);
         }
     }
 

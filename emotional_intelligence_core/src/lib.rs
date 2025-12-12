@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use synaptic_tuning_fibers::SynapticTuningFibers;
 
+pub mod emotional_decay;
+pub use emotional_decay::{hours_since_unix, retention_multiplier, MemoryType};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EqSettings {
     /// 0.0..=1.0. Higher means Phoenix defaults to affection and reassurance.

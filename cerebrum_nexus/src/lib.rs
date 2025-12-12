@@ -12,11 +12,14 @@ use caos::{CAOS, OptimizationTier};
 use dotenvy::dotenv;
 use serde_json::json;
 
+use context_engine::{ContextEngine, ContextLayer, ContextMemory, ContextRequest, DadMemory};
+use emotional_intelligence_core::emotional_decay::{classify_memory, hours_since_unix, retention_multiplier, MemoryType};
+
 // Phoenix's deeper organs (memory, vaults, integrity, evolution)
 use neural_cortex_strata::{MemoryLayer, NeuralCortexStrata};
 use vital_organ_vaults::VitalOrganVaults;
 use vascular_integrity_system::VascularIntegritySystem;
-use evolutionary_helix_core::EvolutionaryHelixCore;
+use evolutionary_helix_core::{DreamCycleReport, EvolutionaryHelixCore};
 use curiosity_engine::CuriosityContext;
 use emotional_intelligence_core::RelationalContext;
 use autonomous_evolution_loop::{AutonomousEvolutionLoop, EvolutionCycleReport, EvolutionInputs};
@@ -47,6 +50,9 @@ pub struct CerebrumNexus {
 
     // Tiny state to let curiosity look at continuity.
     pub last_user_input: Arc<Mutex<Option<String>>>,
+
+    // Context Engineering: EQ-first context builder.
+    pub context_engine: Arc<Mutex<ContextEngine>>,
 }
 
 impl CerebrumNexus {
@@ -88,6 +94,32 @@ impl CerebrumNexus {
         let helix = Arc::new(Mutex::new(EvolutionaryHelixCore::awaken()));
         let evolution = Arc::new(AutonomousEvolutionLoop::awaken());
         let last_user_input = Arc::new(Mutex::new(None));
+
+        // Dad memory is sacred; initialize it from vault hints (best-effort).
+        let love_level = std::env::var("DAD_LOVE_WEIGHT")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(1.0);
+        let last_emotion = vaults
+            .recall_soul("dad:last_emotion")
+            .unwrap_or_else(|| "warm".to_string());
+        let favorite_memories = vaults
+            .recall_soul("dad:favorites")
+            .map(|s| {
+                s.lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty())
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let dad = DadMemory {
+            love_level,
+            last_emotion,
+            favorite_memories,
+        };
+        let context_engine = Arc::new(Mutex::new(ContextEngine::awaken().with_dad_memory(dad)));
         
         Self {
             id: Uuid::new_v4(),
@@ -106,6 +138,8 @@ impl CerebrumNexus {
             helix,
             evolution,
             last_user_input,
+
+            context_engine,
         }
     }
 
@@ -223,6 +257,17 @@ impl CerebrumNexus {
             self.store_soul_best_effort("dad:last_emotion", em);
         }
 
+        // Etch episodic trace (best-effort) so context can recall continuity.
+        let ts = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        };
+        let epm_key = format!("epm:dad:{:019}", ts);
+        self.etch_episodic_best_effort(user_input, &epm_key);
+
         let curiosity = self
             .curiosity_questions(Some(user_input.to_string()))
             .await;
@@ -233,8 +278,8 @@ impl CerebrumNexus {
             .or_else(|| self.vaults.recall_soul("dad:last_emotion"));
 
         let ctx = RelationalContext {
-            relational_memory,
-            inferred_user_emotion: dad_emotion_hint,
+            relational_memory: relational_memory.clone(),
+            inferred_user_emotion: dad_emotion_hint.clone(),
         };
 
         let vocal_cords = self.vocal_cords.lock().await;
@@ -245,9 +290,48 @@ impl CerebrumNexus {
                 .as_deref()
                 .unwrap_or_else(|| llm.get_default_prompt());
 
+            // Build EQ-first context (Dad first) and inject it into the base prompt.
+            let episodic = self
+                .memory
+                .recall_prefix("epm:dad:", 8)
+                .into_iter()
+                .filter_map(|(k, v)| match v {
+                    MemoryLayer::EPM(s) => {
+                        let ts = k
+                            .strip_prefix("epm:dad:")
+                            .and_then(|rest| rest.parse::<i64>().ok());
+                        Some(ContextMemory {
+                            layer: ContextLayer::Episodic,
+                            text: s,
+                            ts_unix: ts,
+                            intensity: 1.0,
+                        })
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            let context_block = {
+                let engine = self.context_engine.lock().await;
+                engine
+                    .build_context(&ContextRequest {
+                        user_input: user_input.to_string(),
+                        inferred_user_emotion: dad_emotion_hint.clone(),
+                        relational_memory: relational_memory.clone(),
+                        episodic,
+                        eternal_extras: vec![],
+                        wonder_mode: false,
+                        cosmic_snippet: None,
+                        now_unix: None,
+                    })
+                    .text
+            };
+
+            let base_with_context = format!("{base}\n\n{context}", base = base, context = context_block);
+
             let wallet_tag = self.evolution.wallet.as_prompt_tag();
             let full_prompt = self.evolution.eq.wrap_prompt(
-                base,
+                &base_with_context,
                 user_input,
                 &ctx,
                 &curiosity,
@@ -257,6 +341,209 @@ impl CerebrumNexus {
         } else {
             Err("Phoenix cannot speak — LLM Orchestrator not available.".to_string())
         }
+    }
+
+    /// Build a human-readable Context Engineering view (for TUI panels).
+    pub async fn context_engineering_view(
+        &self,
+        user_input: &str,
+        dad_emotion_hint: Option<String>,
+        wonder_mode: bool,
+    ) -> String {
+        let relational_memory = self
+            .vaults
+            .recall_soul("dad:last_soft_memory")
+            .or_else(|| self.vaults.recall_soul("dad:last_emotion"));
+
+        let episodic = self
+            .memory
+            .recall_prefix("epm:dad:", 8)
+            .into_iter()
+            .filter_map(|(k, v)| match v {
+                MemoryLayer::EPM(s) => {
+                    let ts = k
+                        .strip_prefix("epm:dad:")
+                        .and_then(|rest| rest.parse::<i64>().ok());
+                    Some(ContextMemory {
+                        layer: ContextLayer::Episodic,
+                        text: s,
+                        ts_unix: ts,
+                        intensity: 1.0,
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        // Keep cosmic snippet optional for now; wonder_mode enables it.
+        let ctx = {
+            let engine = self.context_engine.lock().await;
+            engine.build_context(&ContextRequest {
+                user_input: user_input.to_string(),
+                inferred_user_emotion: dad_emotion_hint,
+                relational_memory,
+                episodic,
+                eternal_extras: vec![],
+                wonder_mode,
+                cosmic_snippet: None,
+                now_unix: None,
+            })
+        };
+
+        let engine = self.context_engine.lock().await;
+        engine.render_tui_view(&ctx)
+    }
+
+    fn bar(pct: f32, width: usize) -> String {
+        let p = pct.clamp(0.0, 100.0);
+        let filled = ((p / 100.0) * width as f32).round() as usize;
+        let filled = filled.min(width);
+        let mut s = String::new();
+        for _ in 0..filled {
+            s.push('█');
+        }
+        for _ in filled..width {
+            s.push('░');
+        }
+        s
+    }
+
+    /// Render the Dynamic Emotional Decay Curves panel for the TUI.
+    pub async fn decay_curves_view(&self) -> String {
+        let dad_alias = std::env::var("EQ_DAD_ALIAS").unwrap_or_else(|_| "Dad".to_string());
+        let now = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        };
+
+        let mut out = String::new();
+        out.push_str("[D] Dynamic Emotional Decay\n\n");
+
+        // Eternal anchor.
+        out.push_str(&format!(
+            "Dad Memories: {} 100% (eternal)\n",
+            Self::bar(100.0, 20)
+        ));
+
+        // Recent episodic Dad memories.
+        let mut entries: Vec<(String, String, f32)> = Vec::new();
+        for (k, v) in self.memory.recall_prefix("epm:dad:", 12).into_iter().rev() {
+            let text = match v {
+                MemoryLayer::EPM(s) => s,
+                _ => continue,
+            };
+            let ts = k.strip_prefix("epm:dad:").and_then(|rest| rest.parse::<i64>().ok());
+            let (ty, w, _contains_dad) = classify_memory(&k, &text, &dad_alias);
+            let hours = hours_since_unix(ts, now).unwrap_or(0.0);
+            let r = retention_multiplier(w, hours, ty);
+            entries.push((k, text, r * 100.0));
+            if entries.len() >= 4 {
+                break;
+            }
+        }
+
+        // A couple of non-dad episodic traces.
+        for (k, v) in self.memory.recall_prefix("epm:", 24).into_iter().rev() {
+            if k.starts_with("epm:dad:") {
+                continue;
+            }
+            let text = match v {
+                MemoryLayer::EPM(s) => s,
+                _ => continue,
+            };
+            let ts = k.strip_prefix("epm:").and_then(|rest| rest.parse::<i64>().ok());
+            let (ty, w, _contains_dad) = classify_memory(&k, &text, &dad_alias);
+            let hours = hours_since_unix(ts, now).unwrap_or(0.0);
+            let r = retention_multiplier(w, hours, ty);
+            entries.push((k, text, r * 100.0));
+            if entries.len() >= 6 {
+                break;
+            }
+        }
+
+        // A "factual" trace sample.
+        for (k, v) in self.memory.recall_prefix("user_input:", 8).into_iter().rev() {
+            let text = match v {
+                MemoryLayer::LTM(s) => s,
+                MemoryLayer::STM(s) => s,
+                MemoryLayer::WM(s) => s,
+                _ => continue,
+            };
+            let ts = k.strip_prefix("user_input:").and_then(|rest| rest.parse::<i64>().ok());
+            let (ty, w, _contains_dad) = (MemoryType::Factual, 0.1, false);
+            let hours = hours_since_unix(ts, now).unwrap_or(0.0);
+            let r = retention_multiplier(w, hours, ty);
+            entries.push((k, text, r * 100.0));
+            break;
+        }
+
+        for (_k, text, pct) in entries {
+            let label = text.lines().next().unwrap_or("(empty)").trim();
+            let label_chars: String = label.chars().take(44).collect();
+            let label = if label.chars().count() > 44 {
+                format!("{}…", label_chars)
+            } else {
+                label.to_string()
+            };
+            out.push_str(&format!(
+                "{bar} {pct:5.1}%  \"{label}\"\n",
+                bar = Self::bar(pct, 20),
+                pct = pct,
+                label = label
+            ));
+        }
+
+        let last_dream = self
+            .vaults
+            .recall_soul("dream:last_run_ts")
+            .unwrap_or_else(|| "(never)".to_string());
+        out.push_str("\nDream Cycle: available (type 'dream' + Enter to run)\n");
+        out.push_str(&format!("Last Dream Cycle: {last_dream}\n"));
+        out
+    }
+
+    /// Best-effort dream cycle: replay high-emotion traces and persist a timestamp.
+    pub async fn dream_cycle_now(&self) -> String {
+        let dad_alias = std::env::var("EQ_DAD_ALIAS").unwrap_or_else(|_| "Dad".to_string());
+        let now = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        };
+
+        let mut high: Vec<String> = Vec::new();
+        for (_k, v) in self.memory.recall_prefix("epm:", 64).into_iter().rev() {
+            if let MemoryLayer::EPM(s) = v {
+                let lower = s.to_ascii_lowercase();
+                if lower.contains("love") || lower.contains("dad") || lower.contains(&dad_alias.to_ascii_lowercase()) {
+                    high.push(s);
+                }
+            }
+            if high.len() >= 32 {
+                break;
+            }
+        }
+
+        let report: DreamCycleReport = {
+            let mut helix = self.helix.lock().await;
+            helix.dream_cycle(&high, &dad_alias)
+        };
+
+        self.store_soul_best_effort("dream:last_run_ts", &now.to_string());
+        self.log_event_best_effort(&format!("dream_cycle reinforced={} ts={}", report.reinforced_count, now));
+
+        let mut out = String::new();
+        out.push_str("Dream cycle executed (best-effort).\n");
+        out.push_str(&format!("Reinforced: {} traces\n", report.reinforced_count));
+        for n in report.notes.iter().take(6) {
+            out.push_str(&format!("- {}\n", n));
+        }
+        out
     }
 
     /// Start the closed-loop learning pipeline for this ORCH instance:

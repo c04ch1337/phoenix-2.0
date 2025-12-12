@@ -15,6 +15,7 @@ futures-util = "0.3"
 url = "2"
 json-patch = "3"
 tracing = "0.1"
+context_engine = { path = "../context_engine" }
 nervous_pathway_network = { path = "../nervous_pathway_network" }
 limb_extension_grafts = { path = "../limb_extension_grafts" }
 vital_pulse_monitor = { path = "../vital_pulse_monitor" }
