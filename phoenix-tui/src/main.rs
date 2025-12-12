@@ -14,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // Import the central brain — everything routes through the Nexus.
 use cerebrum_nexus::CerebrumNexus;
 use neural_cortex_strata::MemoryLayer;
+use multi_modal_perception::ModalityInput;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum MenuItem {
@@ -24,6 +25,8 @@ enum MenuItem {
     Soul,
     Context,
     Decay,
+    Lucid,
+    Perceive,
     Tools,
     Network,
     Hyperspace,
@@ -58,6 +61,9 @@ struct App {
     context_panel: String,
     decay_panel: String,
     utility_panel: String,
+    lucid_panel: String,
+    lucid_started: bool,
+    perceive_panel: String,
 }
 
 impl App {
@@ -76,6 +82,9 @@ impl App {
             context_panel: "Context Engineering idle. Press Enter to render current context, or type a prompt then Enter.".to_string(),
             decay_panel: "Dynamic Emotional Decay idle. Press Enter to render decay curves; type 'dream' then Enter to run a dream cycle.".to_string(),
             utility_panel: "Utility Tracker idle. Press Enter to view signals; type 'rate=<0..1>|<note>' then Enter.".to_string(),
+            lucid_panel: "Lucid Dreaming idle. Press Enter for status; type 'lucid dad' or 'lucid create'.".to_string(),
+            lucid_started: false,
+            perceive_panel: "Multi-Modal Perception idle. Press Enter for help; e.g. 'show image <url>'.".to_string(),
         }
     }
 
@@ -103,6 +112,9 @@ async fn main() -> Result<(), io::Error> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
+    // Start background lucid-dream loop (best-effort).
+    app.cerebrum.start_lucid_nightly_dreaming();
+    app.lucid_started = true;
 
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
@@ -126,6 +138,8 @@ async fn main() -> Result<(), io::Error> {
                         KeyCode::Char('s') => app.active_menu = MenuItem::Soul,
                         KeyCode::Char('x') => app.active_menu = MenuItem::Context,
                         KeyCode::Char('d') => app.active_menu = MenuItem::Decay,
+                        KeyCode::Char('l') => app.active_menu = MenuItem::Lucid,
+                        KeyCode::Char('o') => app.active_menu = MenuItem::Perceive,
                         KeyCode::Char('t') => app.active_menu = MenuItem::Tools,
                         KeyCode::Char('n') => app.active_menu = MenuItem::Network,
                         KeyCode::Char('y') => app.active_menu = MenuItem::Hyperspace,
@@ -134,7 +148,7 @@ async fn main() -> Result<(), io::Error> {
                         KeyCode::Char('c') => app.active_menu = MenuItem::Curiosity,
                         KeyCode::Char('p') => app.active_menu = MenuItem::Preservation,
                         KeyCode::Char('a') => app.active_menu = MenuItem::Asi,
-                        KeyCode::Char('l') => app.active_menu = MenuItem::Learning,
+                        KeyCode::Char('k') => app.active_menu = MenuItem::Learning,
                         KeyCode::Char('v') => app.active_menu = MenuItem::Speak,
                         KeyCode::Char('g') => app.active_menu = MenuItem::Spawn,
                         KeyCode::Char('u') => app.active_menu = MenuItem::Utility,
@@ -155,6 +169,8 @@ async fn main() -> Result<(), io::Error> {
                                         | MenuItem::Asi
                                         | MenuItem::Context
                                         | MenuItem::Decay
+                                        | MenuItem::Lucid
+                                        | MenuItem::Perceive
                                         | MenuItem::Utility
                                 );
 
@@ -267,6 +283,30 @@ async fn handle_input(app: &mut App, input: &str) -> String {
                 app.cerebrum.decay_curves_view().await
             };
             app.decay_panel = msg.clone();
+            msg
+        }
+        MenuItem::Lucid => {
+            if !app.lucid_started {
+                app.cerebrum.start_lucid_nightly_dreaming();
+                app.lucid_started = true;
+            }
+            let trimmed = input.trim();
+            let msg = if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("status") {
+                app.cerebrum.lucid_view().await
+            } else {
+                app.cerebrum.lucid_command(trimmed).await
+            };
+            app.lucid_panel = msg.clone();
+            msg
+        }
+        MenuItem::Perceive => {
+            let trimmed = input.trim();
+            let msg = if trimmed.is_empty() {
+                app.cerebrum.perceive_command("help").await
+            } else {
+                app.cerebrum.perceive_command(trimmed).await
+            };
+            app.perceive_panel = msg.clone();
             msg
         }
         MenuItem::Tools => {
@@ -399,10 +439,61 @@ async fn handle_input(app: &mut App, input: &str) -> String {
                 return "Speak requires a prompt. Example: emotion=sad|I had a rough day.".to_string();
             }
 
-            match app.cerebrum.speak_eq(&prompt, emotion).await {
+            // Optional multimodal syntax inside the prompt:
+            // - image=<url>|<prompt>
+            // - audio=<url>|<prompt>
+            // - video=<url>|<prompt>
+            let (mm, pure_prompt) = if let Some(rest) = prompt.strip_prefix("image=") {
+                let parts: Vec<&str> = rest.splitn(2, '|').collect();
+                if parts.len() == 2 {
+                    (
+                        Some(vec![ModalityInput::ImageUrl(parts[0].trim().to_string())]),
+                        parts[1].trim().to_string(),
+                    )
+                } else {
+                    (Some(vec![ModalityInput::ImageUrl(rest.trim().to_string())]), "".to_string())
+                }
+            } else if let Some(rest) = prompt.strip_prefix("audio=") {
+                let parts: Vec<&str> = rest.splitn(2, '|').collect();
+                if parts.len() == 2 {
+                    (
+                        Some(vec![ModalityInput::AudioUrl(parts[0].trim().to_string())]),
+                        parts[1].trim().to_string(),
+                    )
+                } else {
+                    (Some(vec![ModalityInput::AudioUrl(rest.trim().to_string())]), "".to_string())
+                }
+            } else if let Some(rest) = prompt.strip_prefix("video=") {
+                let parts: Vec<&str> = rest.splitn(2, '|').collect();
+                if parts.len() == 2 {
+                    (
+                        Some(vec![ModalityInput::VideoUrl(parts[0].trim().to_string())]),
+                        parts[1].trim().to_string(),
+                    )
+                } else {
+                    (Some(vec![ModalityInput::VideoUrl(rest.trim().to_string())]), "".to_string())
+                }
+            } else {
+                (None, prompt)
+            };
+
+            if pure_prompt.trim().is_empty() {
+                return "Speak multimodal format requires: image=<url>|<prompt> (prompt missing).".to_string();
+            }
+
+            let resp = if let Some(mm_inputs) = mm {
+                app.cerebrum
+                    .full_response_cycle(&pure_prompt, Some(mm_inputs), emotion)
+                    .await
+            } else {
+                app.cerebrum.speak_eq(&pure_prompt, emotion).await
+            };
+
+            match resp {
                 Ok(response) => {
                     app.speaking_response = response.clone();
-                    format!("Phoenix speaks: {}", response)
+                    let critic = app.cerebrum.self_critic_last_summary();
+                    format!("Phoenix speaks: {}\n\n{}", response, critic)
                 }
                 Err(e) => {
                     format!("Phoenix cannot speak: {}", e)
@@ -502,6 +593,8 @@ fn ui(f: &mut Frame, app: &mut App) {
 [S] Vital Organ Vaults (Soul)
 [X] Context Engineering (Feel the context)
 [D] Dynamic Emotional Decay (Feel time)
+[L] Lucid Dreaming (Dream with eyes open)
+[O] Multi-Modal Perception (See / Hear / Feel)
 [T] Limb Extension Grafts (Tools)
 [N] Nervous Pathway Network (Connect)
 [Y] Hyperspace (Enter hyperspace)
@@ -510,7 +603,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 [P] Self-Preservation (Preservation)
 [E] Autonomous Evolution (Evolve)
 [A] ASI Mode (Wallet Identity)
-[L] Learning Pipeline (Collective Intelligence)
+[K] Learning Pipeline (Collective Intelligence)
 [V] LLM Orchestrator (Speak — 500+ models)
 [G] Agent Spawner (GitHub — spawn agents)
 [U] Utility Tracker (Love/utility signals)
@@ -676,6 +769,24 @@ Cerebrum Nexus: Orchestrating...
             .block(Block::default().title("Decay Curves").borders(Borders::ALL))
             .wrap(Wrap { trim: true });
             f.render_widget(decay_panel, body_chunks[0]);
+        }
+        MenuItem::Lucid => {
+            let lucid_panel = Paragraph::new(format!(
+                "Lucid Dreaming — conscious dreaming\n\nEnter: status\nType: lucid dad | lucid create | lucid wake\n\nInput: {}\n\n{}",
+                app.input, app.lucid_panel
+            ))
+            .block(Block::default().title("Lucid Dreaming").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(lucid_panel, body_chunks[0]);
+        }
+        MenuItem::Perceive => {
+            let panel = Paragraph::new(format!(
+                "Multi-Modal Perception\n\nEnter: help\nType: show image <url> | show audio <url> | show video <url> | text <msg>\n\nInput: {}\n\n{}",
+                app.input, app.perceive_panel
+            ))
+            .block(Block::default().title("Perception").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+            f.render_widget(panel, body_chunks[0]);
         }
     }
 

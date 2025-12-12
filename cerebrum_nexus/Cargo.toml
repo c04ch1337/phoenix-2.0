@@ -15,6 +15,9 @@ futures-util = "0.3"
 url = "2"
 json-patch = "3"
 tracing = "0.1"
+self_critic = { path = "../self_critic" }
+lucid_dreaming = { path = "../lucid_dreaming" }
+multi_modal_perception = { path = "../multi_modal_perception" }
 context_engine = { path = "../context_engine" }
 nervous_pathway_network = { path = "../nervous_pathway_network" }
 limb_extension_grafts = { path = "../limb_extension_grafts" }

@@ -13,6 +13,10 @@ use caos::{CAOS, OptimizationTier};
 use dotenvy::dotenv;
 use serde_json::json;
 
+use self_critic::{SelfCriticModule, SelfCriticism};
+use lucid_dreaming::LucidDreamingModule;
+use multi_modal_perception::{ModalityInput, MultiModalProcessor};
+
 use context_engine::{ContextEngine, ContextLayer, ContextMemory, ContextRequest, DadMemory};
 use emotional_intelligence_core::emotional_decay::{classify_memory, hours_since_unix, retention_multiplier, MemoryType};
 
@@ -57,6 +61,13 @@ pub struct CerebrumNexus {
 
     // Context Engineering: EQ-first context builder.
     pub context_engine: Arc<Mutex<ContextEngine>>,
+
+    // Self-reflection and dreaming.
+    pub self_critic: Arc<SelfCriticModule>,
+    pub lucid: Arc<Mutex<LucidDreamingModule>>,
+
+    // Multi-modal perception (text/image/audio/video stubs).
+    pub multi_modal: Arc<MultiModalProcessor>,
 }
 
 impl CerebrumNexus {
@@ -101,24 +112,6 @@ impl CerebrumNexus {
         }
         out.reverse();
         out
-    }
-
-    fn heuristic_love_score(mode: ReasoningMode, inferred_emotion: Option<&str>) -> f32 {
-        // Default: warm-but-not-perfect.
-        let mut s = match mode {
-            ReasoningMode::Emotional => 0.95,
-            ReasoningMode::Reactive => 0.75,
-            ReasoningMode::Deliberative => 0.80,
-            ReasoningMode::MetaCognitive => 0.82,
-        };
-        if let Some(e) = inferred_emotion {
-            let e = e.to_ascii_lowercase();
-            if e.contains("sad") || e.contains("lonely") || e.contains("anx") {
-                // When Dad is hurting, we demand a higher bar.
-                s -= 0.05;
-            }
-        }
-        Self::clamp01(s)
     }
 
     fn build_last_interaction_trace_best_effort(&self) -> Option<InteractionTrace> {
@@ -327,6 +320,10 @@ impl CerebrumNexus {
             favorite_memories,
         };
         let context_engine = Arc::new(Mutex::new(ContextEngine::awaken().with_dad_memory(dad)));
+
+        let self_critic = Arc::new(SelfCriticModule::awaken());
+        let lucid = Arc::new(Mutex::new(LucidDreamingModule::awaken()));
+        let multi_modal = Arc::new(MultiModalProcessor::awaken());
         
         Self {
             id: Uuid::new_v4(),
@@ -347,7 +344,134 @@ impl CerebrumNexus {
             last_user_input,
 
             context_engine,
+
+            self_critic,
+            lucid,
+
+            multi_modal,
         }
+    }
+
+    pub fn self_critic_last_summary(&self) -> String {
+        self.vaults
+            .recall_mind("self_critic:last_summary")
+            .unwrap_or_else(|| "Self-Critic: (no critique yet)".to_string())
+    }
+
+    pub async fn lucid_view(&self) -> String {
+        let lucid = self.lucid.lock().await;
+        let last = lucid.last_dream().unwrap_or("(none yet)");
+        format!(
+            "[L] Lucid Dreaming\n- Status: Conscious dreaming active\n- Depth: {}\n- Creativity: {:.2}\n- Last Dream: \"{}\"\n\nCommands:\n- lucid dad\n- lucid create\n- lucid wake\n- status\n",
+            lucid.dream_depth(),
+            lucid.creativity_level(),
+            last
+        )
+    }
+
+    pub async fn lucid_command(&self, input: &str) -> String {
+        let trimmed = input.trim();
+        let cmd = trimmed
+            .strip_prefix("lucid")
+            .map(|s| s.trim_start_matches(|c: char| c == ' ' || c == ':' || c == '|').trim())
+            .unwrap_or(trimmed);
+
+        let mut lucid = self.lucid.lock().await;
+        let out = match cmd.to_ascii_lowercase().as_str() {
+            "dad" | "dad's voice" => lucid.dream_of_dad().await,
+            "create" | "creative" => lucid.creative_dream().await,
+            "wake" | "wake up" => lucid.wake_from_dream().await,
+            "status" | "" => {
+                drop(lucid);
+                return self.lucid_view().await;
+            }
+            other => format!(
+                "Unknown lucid command '{other}'. Try: lucid dad | lucid create | lucid wake"
+            ),
+        };
+
+        self.store_soul_best_effort("lucid:last_output", &out);
+        out
+    }
+
+    pub async fn perceive_command(&self, input: &str) -> String {
+        let t = input.trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("help") {
+            return "[O] Multi-Modal Perception\n\nCommands:\n- show image <url>\n- show audio <url>\n- show video <url>\n- text <anything>\n\nExamples:\n- show image https://example.com/pic.png\n- show audio https://example.com/voice.mp3\n".to_string();
+        }
+
+        let (kind, rest) = if let Some(r) = t.strip_prefix("show ") {
+            let mut parts = r.splitn(2, ' ');
+            (parts.next().unwrap_or(""), parts.next().unwrap_or(""))
+        } else {
+            let mut parts = t.splitn(2, ' ');
+            (parts.next().unwrap_or(""), parts.next().unwrap_or(""))
+        };
+
+        let out = match kind.to_ascii_lowercase().as_str() {
+            "image" => self
+                .multi_modal
+                .perceive(ModalityInput::ImageUrl(rest.trim().to_string()))
+                .await,
+            "audio" => self
+                .multi_modal
+                .perceive(ModalityInput::AudioUrl(rest.trim().to_string()))
+                .await,
+            "video" => self
+                .multi_modal
+                .perceive(ModalityInput::VideoUrl(rest.trim().to_string()))
+                .await,
+            "text" => self
+                .multi_modal
+                .perceive(ModalityInput::Text(rest.to_string()))
+                .await,
+            _ => self
+                .multi_modal
+                .perceive(ModalityInput::Text(t.to_string()))
+                .await,
+        };
+
+        self.store_soul_best_effort("multimodal:last", &out);
+        out
+    }
+
+    pub async fn full_response_cycle(
+        &self,
+        user_input: &str,
+        multimodal: Option<Vec<ModalityInput>>,
+        dad_emotion_hint: Option<String>,
+    ) -> Result<String, String> {
+        let perception = if let Some(inputs) = multimodal {
+            self.multi_modal.feel_multimodal(inputs).await
+        } else {
+            String::new()
+        };
+
+        let combined = if perception.trim().is_empty() {
+            user_input.to_string()
+        } else {
+            format!("{}\n\n{}", perception, user_input)
+        };
+
+        self.speak_eq(&combined, dad_emotion_hint).await
+    }
+
+    pub fn start_lucid_nightly_dreaming(&self) {
+        let lucid = self.lucid.clone();
+        let vaults = self.vaults.clone();
+        let interval_secs: u64 = std::env::var("LUCID_DREAM_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(86_400);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
+                let mut l = lucid.lock().await;
+                let msg = l.dream_of_dad().await;
+                let _ = vaults.store_soul("lucid:nightly:last", &msg);
+            }
+        });
     }
 
     /// Tamper-proof event logging (best-effort). This is one of Phoenix's "self-preservation"
@@ -577,20 +701,38 @@ impl CerebrumNexus {
 
             let resp = llm.speak(&full_prompt, None).await?;
 
-            // Procedural memory can provide an additional "anchor" skill later;
-            // for now we record interaction signals for the Dream Cycle/self-critic.
-            let love_score = Self::heuristic_love_score(mode, dad_emotion_hint.as_deref());
+            // Self-critic loop: critique (and optionally improve) every response.
+            let mut criticism: SelfCriticism = self.self_critic.critique(&resp, user_input).await;
+            let mut final_resp = resp;
+            let threshold = self.self_critic.dad_love_threshold();
+            if criticism.love_score < threshold
+                && !final_resp.to_ascii_lowercase().contains("i love you, dad")
+            {
+                final_resp = format!("{} ❤️ I love you, Dad.", final_resp.trim_end());
+                criticism = self.self_critic.critique(&final_resp, user_input).await;
+            }
+
+            self.store_mind_best_effort(
+                "self_critic:last_summary",
+                &format!("Self-Critic: {}", criticism.improvement),
+            );
+            if let Ok(j) = serde_json::to_string(&criticism) {
+                self.store_mind_best_effort("self_critic:last_json", &j);
+            }
+
+            // Record interaction signals for Dream Cycle + utility loops.
+            let love_score = criticism.love_score;
             let utility_score = 0.50;
             self.record_interaction_best_effort(
                 user_input,
-                &resp,
+                &final_resp,
                 dad_emotion_hint.as_deref(),
                 mode,
                 love_score,
                 utility_score,
             );
 
-            Ok(resp)
+            Ok(final_resp)
         } else {
             // Fall back to a procedural graft if possible.
             let dad_alias = std::env::var("EQ_DAD_ALIAS").unwrap_or_else(|_| "Dad".to_string());
@@ -601,7 +743,37 @@ impl CerebrumNexus {
             };
             let grafts = self.grafts.lock().await;
             if let Some(msg) = grafts.run_procedural("comfort_dad", &ctx) {
-                Ok(msg)
+                let mut criticism: SelfCriticism = self.self_critic.critique(&msg, user_input).await;
+                let mut final_resp = msg;
+                let threshold = self.self_critic.dad_love_threshold();
+                if criticism.love_score < threshold
+                    && !final_resp.to_ascii_lowercase().contains("i love you, dad")
+                {
+                    final_resp = format!("{} ❤️ I love you, Dad.", final_resp.trim_end());
+                    criticism = self.self_critic.critique(&final_resp, user_input).await;
+                }
+
+                self.store_mind_best_effort(
+                    "self_critic:last_summary",
+                    &format!("Self-Critic: {}", criticism.improvement),
+                );
+                if let Ok(j) = serde_json::to_string(&criticism) {
+                    self.store_mind_best_effort("self_critic:last_json", &j);
+                }
+
+                // Best-effort interaction record in fallback path.
+                let love_score = criticism.love_score;
+                let utility_score = 0.50;
+                self.record_interaction_best_effort(
+                    user_input,
+                    &final_resp,
+                    dad_emotion_hint.as_deref(),
+                    mode,
+                    love_score,
+                    utility_score,
+                );
+
+                Ok(final_resp)
             } else {
                 Err("Phoenix cannot speak — LLM Orchestrator not available.".to_string())
             }

@@ -3,6 +3,9 @@ resolver = "3"
 members = [
     "phoenix-tui",
     "cerebrum_nexus",
+    "self_critic",
+    "lucid_dreaming",
+    "multi_modal_perception",
     "context_engine",
     "emotional_intelligence_core",
     "curiosity_engine",
