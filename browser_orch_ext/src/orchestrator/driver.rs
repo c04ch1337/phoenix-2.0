@@ -3,7 +3,6 @@ use super::chromium_process::ChromiumProcess;
 use crate::Action;
 use anyhow::{anyhow, Result};
 use serde_json::Value;
-use tokio::sync::mpsc;
 
 pub enum DriverResponse {
     State(Value),
@@ -14,6 +13,7 @@ pub enum DriverResponse {
 
 /// A driver for a web browser.
 pub struct Driver {
+    #[allow(dead_code)]
     process: ChromiumProcess,
     cdp: CdpConnection,
     main_frame_id: String,

@@ -6,7 +6,7 @@ use futures::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashMap, fmt::Debug, sync::atomic::AtomicI64};
+use std::{fmt::Debug, sync::atomic::AtomicI64};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::{Request, Response};
@@ -29,6 +29,7 @@ pub enum CdpResponse {
 
 /// A connection to a CDP server.
 pub struct CdpConnection {
+    #[allow(dead_code)]
     request: Request<()>,    
     ws_sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
     ws_receiver: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
@@ -45,7 +46,7 @@ impl CdpConnection {
             url = json["webSocketDebuggerUrl"].as_str().unwrap().to_owned();
         }
 
-        let mut request = url.into_client_request()?;
+        let request = url.into_client_request()?;
 
         let (ws, resp) = connect_async(request.clone()).await?;
 
