@@ -12,9 +12,11 @@ anyhow = "1"
 ractor = { version = "0.10", features = ["async-trait"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 url = "2"
+urlencoding = "2"
 json-patch = "3"
 tracing = "0.1"
 self_critic = { path = "../self_critic" }
@@ -43,11 +45,28 @@ phoenix_identity = { path = "../phoenix_identity" }
 intimate_girlfriend_module = { path = "../intimate_girlfriend_module" }
 common_types = { path = "../common_types" }
 evolution_pipeline = { path = "../evolution_pipeline" }
+digital_twin = { path = "../digital_twin" }
+email_orch = { path = "../email_orch" }
+skill_system = { path = "../skill_system" }
+affection_switches = { path = "../affection_switches" }
+system_access = { path = "../system_access" }
+ethical_agent = { path = "../ethical_agent" }
+code_analysis = { path = "../code_analysis" }
 
 [features]
 # WASM tool-loading is heavy; keep it feature-gated so the workspace stays quick to build.
 wasm-tools = ["dep:wasmtime"]
 
+# Heavyweight text NLP backend (downloads / links libtorch via `tch`).
+psych-mapping-rust-bert = ["dep:rust-bert"]
+
 [dependencies.wasmtime]
 version = "12"
 optional = true
+
+[dependencies.rust-bert]
+version = "0.22"
+optional = true
+
+[dev-dependencies]
+async-trait = "0.1"

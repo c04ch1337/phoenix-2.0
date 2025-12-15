@@ -1,0 +1,43 @@
+[package]
+name = "code_analysis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+thiserror = "1.0"
+walkdir = "2"
+regex = "1.10"
+error_types = { path = "../error_types" }
+llm_orchestrator = { path = "../llm_orchestrator" }
+
+# Language-specific parsers (optional features)
+[features]
+default = []
+rust-analysis = ["syn", "quote"]
+python-analysis = ["dep:tree-sitter-python"]
+javascript-analysis = ["dep:tree-sitter-javascript"]
+typescript-analysis = ["dep:tree-sitter-typescript"]
+
+[dependencies.syn]
+version = "2.0"
+optional = true
+features = ["full", "parsing", "extra-traits"]
+
+[dependencies.quote]
+version = "1.0"
+optional = true
+
+[dependencies.tree-sitter-python]
+version = "0.21"
+optional = true
+
+[dependencies.tree-sitter-javascript]
+version = "0.21"
+optional = true
+
+[dependencies.tree-sitter-typescript]
+version = "0.21"
+optional = true

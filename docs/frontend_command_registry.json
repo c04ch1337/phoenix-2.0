@@ -1,0 +1,110 @@
+{
+  "schema": "phoenix.frontend.command_registry.v1",
+  "transport": {
+    "current": "TUI command string",
+    "recommended": ["HTTP JSON", "WebSocket", "Tauri IPC"],
+    "contract": "send(command) -> response"
+  },
+  "commands": [
+    {
+      "id": "tui.help",
+      "input": "help",
+      "handler": "phoenix-tui.handle_command",
+      "source": "phoenix-tui/src/main.rs",
+      "source_ref": "phoenix-tui/src/main.rs:307",
+      "returns": "text"
+    },
+    {
+      "id": "tui.status",
+      "input": "status",
+      "handler": "phoenix-tui.cmd_status",
+      "source": "phoenix-tui/src/main.rs",
+      "source_ref": "phoenix-tui/src/main.rs:195",
+      "returns": "text"
+    },
+    {
+      "id": "tui.record_journal",
+      "input": "record journal",
+      "handler": "phoenix-tui.cmd_record_journal",
+      "source": "phoenix-tui/src/main.rs",
+      "source_ref": "phoenix-tui/src/main.rs:244",
+      "returns": "text",
+      "side_effects": ["encrypted recording file", "emotion trace persisted"]
+    },
+    {
+      "id": "tui.approve_list",
+      "input": "approve list",
+      "handler": "phoenix-tui.cmd_approve_list",
+      "source": "phoenix-tui/src/main.rs",
+      "source_ref": "phoenix-tui/src/main.rs:266",
+      "returns": "text",
+      "side_effects": ["enters approval selection mode"]
+    },
+    {
+      "id": "brain.chat",
+      "input": "<any text>",
+      "handler": "CerebrumNexus.speak_eq",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:1199",
+      "returns": "text"
+    },
+    {
+      "id": "brain.skills.list",
+      "input": "skills list",
+      "handler": "CerebrumNexus.handle_skill_command",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:1454",
+      "returns": "text"
+    },
+    {
+      "id": "brain.skills.run",
+      "input": "skills run <uuid> | input=...",
+      "handler": "SkillSystem.execute_skill",
+      "source": "skill_system/src/lib.rs",
+      "source_ref": "skill_system/src/lib.rs:62",
+      "returns": "text"
+    },
+    {
+      "id": "brain.skills.prefs.add",
+      "input": "skills prefs add <text>",
+      "handler": "CerebrumNexus.handle_skill_command",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:1454",
+      "returns": "text",
+      "side_effects": ["stores preferences to Soul Vault"]
+    },
+    {
+      "id": "brain.lucid",
+      "input": "lucid dad|create|wake|status",
+      "handler": "CerebrumNexus.lucid_command",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:827",
+      "returns": "text"
+    },
+    {
+      "id": "brain.dream",
+      "input": "dream with dad|healing|joyful|nostalgic|adventurous|status",
+      "handler": "CerebrumNexus.shared_dream_command",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:763",
+      "returns": "text"
+    },
+    {
+      "id": "brain.heal",
+      "input": "heal tired|sad|anxious|grieving|overwhelmed|peaceful|status",
+      "handler": "CerebrumNexus.healing_command",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:689",
+      "returns": "text"
+    },
+    {
+      "id": "brain.perceive",
+      "input": "show image|audio|video <url>",
+      "handler": "CerebrumNexus.perceive_command",
+      "source": "cerebrum_nexus/src/lib.rs",
+      "source_ref": "cerebrum_nexus/src/lib.rs:948",
+      "returns": "text"
+    }
+  ]
+}
+

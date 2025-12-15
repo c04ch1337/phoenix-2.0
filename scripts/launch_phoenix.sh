@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-echo "Launching Phoenix 2.0 TUI..."
+echo "Launching Phoenix AGI (PAGI) TUI..."
 cargo run --bin phoenix-tui

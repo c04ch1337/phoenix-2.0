@@ -1,0 +1,13 @@
+[package]
+name = "vision_advanced"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+
+[dependencies]
+dotenvy = "0.15"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+

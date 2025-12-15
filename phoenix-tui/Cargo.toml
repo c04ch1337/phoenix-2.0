@@ -9,6 +9,13 @@ crossterm = "0.27"
 tokio = { version = "1.0", features = ["full"] }
 uuid = { version = "1.0", features = ["v4"] }
 serde_json = "1.0"
+dotenvy = "0.15"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Runtime wiring (TUI-only entrypoint)
+phoenix_identity = { path = "../phoenix_identity" }
+relationship_dynamics = { path = "../extensions/relationship_dynamics" }
+llm_orchestrator = { path = "../llm_orchestrator" }
 cerebrum_nexus = { path = "../cerebrum_nexus" }
 multi_modal_perception = { path = "../multi_modal_perception" }
 multi_modal_recording = { path = "../multi_modal_recording" }

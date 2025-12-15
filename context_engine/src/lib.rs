@@ -1,5 +1,5 @@
 // context_engine/src/lib.rs
-// Context Engineering — EQ-first context stack for Phoenix 2.0.
+// Context Engineering — EQ-first context stack for Phoenix AGI (PAGI).
 //
 // Goal: build a *living* context string where relational/emotional layers
 // outweigh raw factual content.

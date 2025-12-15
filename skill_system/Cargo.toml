@@ -1,0 +1,29 @@
+[package]
+name = "skill_system"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+walkdir = "2.5"
+
+# Phoenix internal dependencies
+common_types = { path = "../common_types" }
+vital_organ_vaults = { path = "../vital_organ_vaults" }
+neural_cortex_strata = { path = "../neural_cortex_strata" }
+emotional_intelligence_core = { path = "../emotional_intelligence_core" }
+llm_orchestrator = { path = "../llm_orchestrator" }
+self_critic = { path = "../self_critic" }
+
+# For relationship integration
+intimate_girlfriend_module = { path = "../intimate_girlfriend_module", optional = true }
+relationship_dynamics = { path = "../extensions/relationship_dynamics", optional = true }
+
+[features]
+default = []
+relationship = ["intimate_girlfriend_module", "relationship_dynamics"]

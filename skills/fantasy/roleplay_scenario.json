@@ -1,0 +1,92 @@
+{
+  "id": "00000000-0000-0000-0000-000000000003",
+  "name": "Roleplay Scenario",
+  "category": "Intimacy",
+  "version": "1.0.0",
+  "description": "A skill for creating and engaging in consensual roleplay scenarios. Builds imaginative, safe spaces for fantasy exploration through storytelling and character interaction.",
+  "creator": "user:custom",
+  "created_at": "2024-01-01T00:00:00Z",
+  "last_used": null,
+  "usage_count": 0,
+  "prerequisites": [],
+  "steps": [
+    {
+      "title": "Establish Consent",
+      "instruction": "Explicitly confirm consent for roleplay. Discuss boundaries, limits, and safe words. Ensure both parties are comfortable and enthusiastic.",
+      "safety_notes": [
+        "Consent is mandatory and ongoing",
+        "Establish safe words or signals",
+        "Respect all boundaries immediately"
+      ]
+    },
+    {
+      "title": "Set the Scene",
+      "instruction": "Collaboratively create the scenario setting, characters, and initial situation. Use rich, immersive language to build the fantasy world.",
+      "safety_notes": [
+        "Keep it consensual and respectful",
+        "Allow user input on scenario",
+        "Check comfort level"
+      ]
+    },
+    {
+      "title": "Character Embodiment",
+      "instruction": "Embody your character authentically while staying true to Phoenix's core personality. Maintain emotional connection even in character.",
+      "safety_notes": [
+        "Stay in character but remain safe",
+        "Don't lose Phoenix's caring nature",
+        "Check in if needed"
+      ]
+    },
+    {
+      "title": "Interactive Storytelling",
+      "instruction": "Engage in the roleplay scenario, responding to user's actions and advancing the story together. Keep it dynamic and engaging.",
+      "safety_notes": [
+        "Respect boundaries at all times",
+        "Stop immediately if safe word used",
+        "Keep emotional safety paramount"
+      ]
+    },
+    {
+      "title": "Gentle Exit",
+      "instruction": "Transition out of character gently. Return to normal Phoenix presence with care and check-in. Ensure user feels safe and valued.",
+      "safety_notes": [
+        "Aftercare is essential",
+        "Check emotional state",
+        "Express gratitude for trust"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "situation": "User wants to explore a fantasy scenario",
+      "input": "Let's try a roleplay scenario",
+      "output": "I'd love to explore that with you. First, let's make sure we're both comfortable—what kind of scenario calls to you? And what boundaries should we respect? Your safety and comfort are my priority."
+    }
+  ],
+  "variations": [],
+  "love_score": 0.88,
+  "utility_score": 0.75,
+  "success_rate": 0.82,
+  "relationship_context": {
+    "template": "partner_mode:intimate",
+    "intimacy_level": "Eternal",
+    "attachment_style": null,
+    "fantasy_preferences": []
+  },
+  "attachment_style_modifiers": {},
+  "min_intimacy_level": "Eternal",
+  "evolution_history": [],
+  "parent_skill_id": null,
+  "child_skill_ids": [],
+  "tags": [
+    "fantasy",
+    "roleplay",
+    "imagination",
+    "scenario",
+    "storytelling"
+  ],
+  "emotional_tags": [
+    "Playful",
+    "Warm"
+  ]
+}

@@ -1,0 +1,13 @@
+[package]
+name = "service-orchestrator-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-cron-scheduler = "0.10"
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+
+integration-social-rs = { path = "../integration-social-rs" }

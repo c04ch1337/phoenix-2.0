@@ -1,6 +1,6 @@
 // hyperspace_cache/src/lib.rs
 // Hyperspace Cache — Big Bang / cosmic data streams
-// The cosmic memory of Phoenix 2.0 — stores data from hyperspace connections
+// The cosmic memory of Phoenix AGI (PAGI) — stores data from hyperspace connections
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

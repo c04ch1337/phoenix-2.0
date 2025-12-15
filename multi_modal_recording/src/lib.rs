@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tokio::sync::Mutex;
 use vital_organ_vaults::VitalOrganVaults;
+use multi_modal_input::LiveMultiModalInput;
 
 /// Image type used by [`MultiModalRecorder::recognize_user()`](crate::MultiModalRecorder::recognize_user).
 pub type Image = DynamicImage;
@@ -70,6 +71,10 @@ pub struct MultiModalRecorder {
     storage_path: PathBuf,
     last_recording: Arc<Mutex<Option<PathBuf>>>,
     listening_stop: Arc<AtomicBool>,
+
+    // Live streaming mode (capture-only; no identification).
+    live_stop: Arc<AtomicBool>,
+    live_running: Arc<AtomicBool>,
 
     // Emotion detection + persistence hooks
     emotion_detector: EmotionDetector,
@@ -133,6 +138,9 @@ impl MultiModalRecorder {
             storage_path,
             last_recording: Arc::new(Mutex::new(None)),
             listening_stop: Arc::new(AtomicBool::new(false)),
+
+            live_stop: Arc::new(AtomicBool::new(false)),
+            live_running: Arc::new(AtomicBool::new(false)),
 
             emotion_detector: EmotionDetector::from_env(),
             last_emotional_state: Arc::new(Mutex::new(None)),
@@ -314,6 +322,127 @@ impl MultiModalRecorder {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
         });
+    }
+
+    /// Start live streaming mode (continuous capture).
+    ///
+    /// This is **capture-only** plumbing. It does not perform face/voice identification.
+    ///
+    /// Enable backends via crate features:
+    /// - `multi_modal_recording/audio`
+    /// - `multi_modal_recording/video`
+    pub async fn start_live_streaming(&self) -> Result<(), Error> {
+        let mut cfg = LiveMultiModalInput::from_env();
+        cfg.microphone_enabled = cfg.microphone_enabled && self.audio_enabled;
+        cfg.webcam_enabled = cfg.webcam_enabled && self.video_enabled;
+
+        if !cfg.microphone_enabled && !cfg.webcam_enabled {
+            return Err(Error::InvalidArgument(
+                "live streaming requested but both microphone and webcam are disabled".to_string(),
+            ));
+        }
+
+        // Validate compile-time feature gates up-front so we can return a typed error.
+        if cfg.microphone_enabled && !cfg!(feature = "audio") {
+            return Err(Error::FeatureDisabled("audio"));
+        }
+        if cfg.webcam_enabled && !cfg!(feature = "video") {
+            return Err(Error::FeatureDisabled("video"));
+        }
+
+        self.live_stop.store(false, Ordering::Relaxed);
+        self.live_running.store(true, Ordering::Relaxed);
+
+        let stop = self.live_stop.clone();
+        let running = self.live_running.clone();
+        let this = self.clone();
+        tokio::spawn(async move {
+            // When built without `video`, the live-loop is capture-only and won't use `this`.
+            #[cfg(not(feature = "video"))]
+            let _ = &this;
+
+            // Keep the streams alive for the duration of this loop.
+            let audio = if cfg.microphone_enabled {
+                cfg.start_audio_stream().await.ok()
+            } else {
+                None
+            };
+            let video = if cfg.webcam_enabled {
+                cfg.start_webcam_stream().await.ok()
+            } else {
+                None
+            };
+
+            // If both requested streams failed to start, exit.
+            if cfg.microphone_enabled && audio.is_none() && cfg.webcam_enabled && video.is_none() {
+                running.store(false, Ordering::Relaxed);
+                return;
+            }
+
+            // If we have a camera, try to open the stream before entering the loop.
+            #[cfg(feature = "video")]
+            let mut video = video;
+            #[cfg(feature = "video")]
+            if let Some(vs) = video.as_mut() {
+                if let Err(e) = vs.camera.open_stream() {
+                    eprintln!("[multi_modal_recording] failed to open webcam stream: {e}");
+                }
+            }
+
+            #[cfg(not(feature = "video"))]
+            let video = video;
+
+            while !stop.load(Ordering::Relaxed) {
+                // Video -> emotion (best-effort)
+            #[cfg(feature = "video")]
+            if let Some(vs) = video.as_ref() {
+                    use nokhwa::pixel_format::RgbFormat;
+
+                    match vs.camera.frame() {
+                        Ok(buffer) => {
+                            match buffer.decode_image::<RgbFormat>() {
+                                Ok(rgb) => {
+                                    let mut state = this
+                                        .emotion_detector
+                                        .fused_emotional_state("", None, Some(rgb.clone()))
+                                        .await;
+
+                                    *this.last_emotional_state.lock().await = Some(state.clone());
+                                    this.append_emotional_moment_best_effort(
+                                        &state,
+                                        Path::new("(live-stream)"),
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!("[multi_modal_recording] decode_image failed: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[multi_modal_recording] webcam frame capture failed: {e}");
+                        }
+                    }
+                }
+
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+
+            drop(audio);
+            drop(video);
+            running.store(false, Ordering::Relaxed);
+        });
+
+        Ok(())
+    }
+
+    /// Stop live streaming mode.
+    pub fn stop_live_streaming(&self) {
+        self.live_stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Best-effort flag for UI/status panels.
+    pub fn live_streaming_active(&self) -> bool {
+        self.live_running.load(Ordering::Relaxed)
     }
 
     /// Stop always-listening background loop (privacy command).

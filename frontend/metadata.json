@@ -1,0 +1,9 @@
+{
+  "description": "Powered by: Phoenix AGI (PAGI)",
+  "requestFramePermissions": [
+    "microphone",
+    "camera",
+    "display-capture"
+  ],
+  "name": "Phoenix ORCH - The Heartbound Edition"
+}

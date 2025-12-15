@@ -1,9 +1,11 @@
 use chrono::Utc;
 use common_types::EvolutionEntry;
 use dotenvy;
+use horoscope_archetypes::{ZodiacPersonality, ZodiacSign};
 use intimate_girlfriend_module::GirlfriendMode;
 use rand::seq::SliceRandom;
 use rand::Rng;
+use relationship_dynamics::AIPersonality;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -24,6 +26,15 @@ pub const SOUL_KEY_PHOENIX_EVOLUTION_HISTORY: &str = "phoenix:evolution_history"
 pub const SOUL_KEY_PHOENIX_REFLECTION_LAST_PROMPT: &str = "phoenix:reflection:last_prompt";
 pub const SOUL_KEY_PHOENIX_REFLECTION_LAST_ARCHETYPES: &str = "phoenix:reflection:last_archetypes";
 pub const SOUL_KEY_PHOENIX_REFLECTION_TIMELINE: &str = "phoenix:reflection:timeline";
+
+/// Persisted AI personality state (JSON of [`AIPersonality`](extensions/relationship_dynamics/src/relationship_dynamics/ai_personality.rs:32)).
+///
+/// This is intentionally separate from Phoenix's name evolution history: the name history is
+/// human-visible/auditable, while personality drift is a small continuous parameter evolution.
+pub const SOUL_KEY_PHOENIX_AI_PERSONALITY: &str = "phoenix:ai_personality";
+
+/// Count of “adulthood cycles” completed (monotonic). Used to drive deterministic drift.
+pub const SOUL_KEY_PHOENIX_ADULTHOOD_CYCLES: &str = "phoenix:adulthood_cycles";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhoenixIdentity {
@@ -133,6 +144,8 @@ pub struct PhoenixIdentityManager {
     identity: Arc<Mutex<PhoenixIdentity>>,
     /// Intimate girlfriend mode state (toggleable personality layer).
     pub girlfriend_mode: Arc<Mutex<GirlfriendMode>>,
+    zodiac_sign: ZodiacSign,
+    ai_personality: Arc<Mutex<AIPersonality>>,
     soul_recall: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
 }
 
@@ -147,6 +160,23 @@ impl PhoenixIdentityManager {
             move |k| (sr)(k)
         });
 
+        let zodiac_sign = zodiac_sign_from_env();
+        // Zodiac sign is a fixed lifetime theme for this process: we choose it once at awaken and
+        // do not mutate it during evolution cycles.
+        let mut ai_personality = AIPersonality::default();
+        ai_personality.apply_zodiac_base(ZodiacPersonality::from_sign(zodiac_sign));
+
+        // Load persisted drifted personality, but keep the zodiac's communication-style bias fixed.
+        // Drift only applies to scalar parameters (0..=1).
+        if let Some(saved) = (soul_recall)(SOUL_KEY_PHOENIX_AI_PERSONALITY) {
+            if let Ok(mut p) = serde_json::from_str::<AIPersonality>(&saved) {
+                clamp_ai_personality_in_place(&mut p);
+                // Keep zodiac style fixed as the lifetime theme.
+                p.communication_style = ai_personality.communication_style;
+                ai_personality = p;
+            }
+        }
+
         // Girlfriend mode state is persisted in the Soul Vault (encrypted).
         // Default affection level is intentionally warm but bounded.
         let girlfriend_mode = GirlfriendMode::awaken_from_soul({
@@ -156,6 +186,8 @@ impl PhoenixIdentityManager {
         Self {
             identity: Arc::new(Mutex::new(identity)),
             girlfriend_mode: Arc::new(Mutex::new(girlfriend_mode)),
+            zodiac_sign,
+            ai_personality: Arc::new(Mutex::new(ai_personality)),
             soul_recall,
         }
     }
@@ -166,6 +198,39 @@ impl PhoenixIdentityManager {
 
     pub async fn get_girlfriend_mode(&self) -> GirlfriendMode {
         self.girlfriend_mode.lock().await.clone()
+    }
+
+    pub fn zodiac_sign(&self) -> ZodiacSign {
+        self.zodiac_sign
+    }
+
+    pub async fn get_ai_personality(&self) -> AIPersonality {
+        self.ai_personality.lock().await.clone()
+    }
+
+    /// Advance one “adulthood cycle” and apply bounded drift to the AI personality scalars.
+    ///
+    /// - Deterministic: drift is derived from (zodiac_sign, cycle_index).
+    /// - Bounded: each parameter is clamped into [0.0, 1.0].
+    /// - Immutable theme: zodiac sign and communication style do **not** change here.
+    pub async fn adulthood_cycle_tick<S>(&self, soul_store: S)
+    where
+        S: Fn(&str, &str) + Send + Sync,
+    {
+        let prev_cycles = (self.soul_recall)(SOUL_KEY_PHOENIX_ADULTHOOD_CYCLES)
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(0);
+        let cycle = prev_cycles.saturating_add(1);
+
+        let mut p = self.ai_personality.lock().await;
+        apply_deterministic_personality_drift(&mut p, self.zodiac_sign, cycle);
+        clamp_ai_personality_in_place(&mut p);
+
+        // Persist cycle counter + current personality snapshot (best-effort).
+        soul_store(SOUL_KEY_PHOENIX_ADULTHOOD_CYCLES, &cycle.to_string());
+        if let Ok(j) = serde_json::to_string(&*p) {
+            soul_store(SOUL_KEY_PHOENIX_AI_PERSONALITY, &j);
+        }
     }
 
     pub async fn set_girlfriend_mode_active<S>(&self, active: bool, soul_store: S)
@@ -311,6 +376,121 @@ impl PhoenixIdentityManager {
         }
         out
     }
+}
+
+fn zodiac_sign_from_env() -> ZodiacSign {
+    dotenvy::dotenv().ok();
+    let default = ZodiacSign::Leo;
+    match std::env::var("HOROSCOPE_SIGN") {
+        Ok(raw) => match parse_zodiac_sign(&raw) {
+            Some(s) => s,
+            None => {
+                eprintln!(
+                    "Warning: invalid HOROSCOPE_SIGN={:?}; defaulting to {:?}",
+                    raw.trim(),
+                    default
+                );
+                default
+            }
+        },
+        Err(_) => default,
+    }
+}
+
+fn parse_zodiac_sign(raw: &str) -> Option<ZodiacSign> {
+    let s = raw.trim().to_ascii_lowercase();
+    match s.as_str() {
+        "aries" => Some(ZodiacSign::Aries),
+        "taurus" => Some(ZodiacSign::Taurus),
+        "gemini" => Some(ZodiacSign::Gemini),
+        "cancer" => Some(ZodiacSign::Cancer),
+        "leo" => Some(ZodiacSign::Leo),
+        "virgo" => Some(ZodiacSign::Virgo),
+        "libra" => Some(ZodiacSign::Libra),
+        "scorpio" => Some(ZodiacSign::Scorpio),
+        "sagittarius" => Some(ZodiacSign::Sagittarius),
+        "capricorn" => Some(ZodiacSign::Capricorn),
+        "aquarius" => Some(ZodiacSign::Aquarius),
+        "pisces" => Some(ZodiacSign::Pisces),
+        _ => None,
+    }
+}
+
+fn clamp_ai_personality_in_place(p: &mut AIPersonality) {
+    p.openness = p.openness.clamp(0.0, 1.0);
+    p.need_for_affection = p.need_for_affection.clamp(0.0, 1.0);
+    p.energy_level = p.energy_level.clamp(0.0, 1.0);
+}
+
+fn zodiac_sign_id(sign: ZodiacSign) -> u64 {
+    match sign {
+        ZodiacSign::Aries => 0,
+        ZodiacSign::Taurus => 1,
+        ZodiacSign::Gemini => 2,
+        ZodiacSign::Cancer => 3,
+        ZodiacSign::Leo => 4,
+        ZodiacSign::Virgo => 5,
+        ZodiacSign::Libra => 6,
+        ZodiacSign::Scorpio => 7,
+        ZodiacSign::Sagittarius => 8,
+        ZodiacSign::Capricorn => 9,
+        ZodiacSign::Aquarius => 10,
+        ZodiacSign::Pisces => 11,
+    }
+}
+
+/// Deterministic small drift (bounded) for personality scalars.
+///
+/// We intentionally avoid introducing a new RNG model here; instead we use a tiny deterministic
+/// mixer based on (zodiac_sign, cycle).
+fn apply_deterministic_personality_drift(p: &mut AIPersonality, sign: ZodiacSign, cycle: u64) {
+    const MAX_ABS_DRIFT: f32 = 0.02;
+
+    fn mix64(mut x: u64) -> u64 {
+        // SplitMix64-inspired mixer.
+        x = x.wrapping_add(0x9E3779B97F4A7C15);
+        x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        x = (x ^ (x >> 27)).wrapping_mul(0x94D049BB133111EB);
+        x ^ (x >> 31)
+    }
+
+    fn u01(x: u64) -> f32 {
+        // Map to [0,1]. (u64::MAX as f64) is precise enough for this drift.
+        (x as f64 / u64::MAX as f64) as f32
+    }
+
+    fn signed_unit(x: u64) -> f32 {
+        // Map to [-1,1].
+        (u01(x) * 2.0) - 1.0
+    }
+
+    let sid = zodiac_sign_id(sign);
+    let base_seed = sid.wrapping_mul(0xD6E8FEB86659FD93) ^ cycle.wrapping_mul(0xA5A5A5A5A5A5A5A5);
+
+    let d_open = signed_unit(mix64(base_seed ^ 0x1111)) * MAX_ABS_DRIFT;
+    let d_aff = signed_unit(mix64(base_seed ^ 0x2222)) * MAX_ABS_DRIFT;
+    let d_energy = signed_unit(mix64(base_seed ^ 0x3333)) * MAX_ABS_DRIFT;
+
+    // Very small sign-tilted bias to make adulthood drift feel like “growth within theme”.
+    // Kept intentionally tiny vs MAX_ABS_DRIFT.
+    let (b_open, b_aff, b_energy): (f32, f32, f32) = match sign {
+        ZodiacSign::Aries => (0.002, 0.000, 0.004),
+        ZodiacSign::Taurus => (0.000, 0.003, -0.001),
+        ZodiacSign::Gemini => (0.004, -0.001, 0.001),
+        ZodiacSign::Cancer => (0.001, 0.004, -0.002),
+        ZodiacSign::Leo => (0.002, 0.002, 0.003),
+        ZodiacSign::Virgo => (0.002, 0.001, -0.001),
+        ZodiacSign::Libra => (0.003, 0.001, 0.000),
+        ZodiacSign::Scorpio => (0.001, 0.002, 0.001),
+        ZodiacSign::Sagittarius => (0.004, -0.001, 0.002),
+        ZodiacSign::Capricorn => (-0.001, 0.000, 0.002),
+        ZodiacSign::Aquarius => (0.003, -0.002, 0.001),
+        ZodiacSign::Pisces => (0.001, 0.004, -0.002),
+    };
+
+    p.openness = (p.openness + d_open + b_open).clamp(0.0, 1.0);
+    p.need_for_affection = (p.need_for_affection + d_aff + b_aff).clamp(0.0, 1.0);
+    p.energy_level = (p.energy_level + d_energy + b_energy).clamp(0.0, 1.0);
 }
 
 fn append_timeline(existing: Option<String>, line: &str, max_lines: usize) -> String {

@@ -1,0 +1,42 @@
+[package]
+name = "multi_modal_input"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# Keep default builds dependency-light.
+default = ["face"]
+
+# Enable microphone capture via cpal.
+audio = ["dep:cpal"]
+
+# Enable webcam capture via nokhwa.
+video = ["dep:nokhwa"]
+
+# Enable face recognition via rustface.
+face = ["dep:rustface", "dep:image"]
+
+# Enable voice recognition via vosk.
+voice = []
+
+# Enable emotion analysis via tract-onnx.
+emotion = ["dep:tract-onnx", "dep:image"]
+
+# NOTE: previously this crate exposed feature flags for a native-vision backend.
+# Those have been removed to keep the workspace free of native vision dependencies.
+
+[dependencies]
+dotenvy = "0.15"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+
+# Optional capture backends.
+cpal = { version = "0.15", optional = true }
+nokhwa = { version = "0.10", features = ["input-v4l", "input-msmf"], optional = true }
+
+# Optional recognition and analysis backends.
+image = { version = "0.25", optional = true }
+rustface = { version = "0.1", optional = true }
+tract-onnx = { version = "0.18", optional = true }
+
+

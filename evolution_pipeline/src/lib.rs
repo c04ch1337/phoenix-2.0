@@ -168,7 +168,7 @@ pub fn commit_all_and_push_branch(
     // Commit.
     let sig = repo
         .signature()
-        .or_else(|_| git2::Signature::now("Phoenix 2.0", "phoenix@eternal.agi"))?;
+        .or_else(|_| git2::Signature::now("Phoenix AGI (PAGI)", "phoenix@eternal.agi"))?;
     let parent = repo.head()?.peel_to_commit()?;
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])?;
 

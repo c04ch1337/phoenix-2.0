@@ -1,6 +1,6 @@
-# Phoenix 2.0 Repository Structure
+# Phoenix AGI (PAGI) Repository Structure
 
-This document provides a complete overview of the Phoenix 2.0 repository structure, showing all files and folders and how they are organized.
+This document provides a complete overview of the Phoenix AGI (PAGI) repository structure, showing all files and folders and how they are organized.
 
 ## Root Directory Structure
 

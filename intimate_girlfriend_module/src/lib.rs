@@ -1,6 +1,7 @@
-//! Intimate Girlfriend / Partner mode
+//! Intimate Partner Mode (Girlfriend/Boyfriend/Partner)
 //!
 //! This is a **personality layer** that can be toggled on/off.
+//! Supports inclusive relationship types: girlfriend, boyfriend, or gender-neutral partner.
 //!
 //! Safety constraints (enforced prompt-side + by design):
 //! - Always consensual, respectful, and non-coercive
@@ -11,15 +12,111 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Partner type for intimate mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PartnerType {
+    Girlfriend,  // Default for backward compatibility
+    Boyfriend,
+    Partner,     // Gender-neutral option
+}
+
+impl PartnerType {
+    pub fn from_str(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "boyfriend" | "bf" => PartnerType::Boyfriend,
+            "partner" | "significant other" | "so" => PartnerType::Partner,
+            _ => PartnerType::Girlfriend, // Default
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PartnerType::Girlfriend => "girlfriend",
+            PartnerType::Boyfriend => "boyfriend",
+            PartnerType::Partner => "partner",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PartnerType::Girlfriend => "Girlfriend",
+            PartnerType::Boyfriend => "Boyfriend",
+            PartnerType::Partner => "Partner",
+        }
+    }
+}
+
+impl Default for PartnerType {
+    fn default() -> Self {
+        PartnerType::Girlfriend
+    }
+}
+
+/// Sexual orientation/preference
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SexualOrientation {
+    Heterosexual,
+    Homosexual,
+    Bisexual,
+    Pansexual,
+    Asexual,
+    Demisexual,
+    Queer,       // Umbrella term
+    Other,       // Custom/prefer not to say
+}
+
+impl SexualOrientation {
+    pub fn from_str(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "heterosexual" | "straight" | "het" => SexualOrientation::Heterosexual,
+            "homosexual" | "gay" | "lesbian" => SexualOrientation::Homosexual,
+            "bisexual" | "bi" => SexualOrientation::Bisexual,
+            "pansexual" | "pan" => SexualOrientation::Pansexual,
+            "asexual" | "ace" => SexualOrientation::Asexual,
+            "demisexual" | "demi" => SexualOrientation::Demisexual,
+            "queer" => SexualOrientation::Queer,
+            _ => SexualOrientation::Heterosexual, // Default
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SexualOrientation::Heterosexual => "heterosexual",
+            SexualOrientation::Homosexual => "homosexual",
+            SexualOrientation::Bisexual => "bisexual",
+            SexualOrientation::Pansexual => "pansexual",
+            SexualOrientation::Asexual => "asexual",
+            SexualOrientation::Demisexual => "demisexual",
+            SexualOrientation::Queer => "queer",
+            SexualOrientation::Other => "other",
+        }
+    }
+}
+
+impl Default for SexualOrientation {
+    fn default() -> Self {
+        SexualOrientation::Heterosexual
+    }
+}
+
 /// Phoenix already uses [`emotional_intelligence_core::RelationalContext`] as the lightweight
 /// "emotional context" carrier.
 pub type EmotionalContext = emotional_intelligence_core::RelationalContext;
 
 /// Persisted state keys (Soul Vault / encrypted).
+/// Legacy keys maintained for backward compatibility.
 pub const SOUL_KEY_GIRLFRIEND_ACTIVE: &str = "girlfriend_mode:active";
 pub const SOUL_KEY_GIRLFRIEND_AFFECTION_LEVEL: &str = "girlfriend_mode:affection_level";
 pub const SOUL_KEY_GIRLFRIEND_MEMORY_TAGS: &str = "girlfriend_mode:memory_tags";
 pub const SOUL_KEY_GIRLFRIEND_LAST_INTIMATE_MOMENT: &str = "girlfriend_mode:last_intimate_moment";
+
+/// New inclusive keys
+pub const SOUL_KEY_PARTNER_MODE_ACTIVE: &str = "partner_mode:active";
+pub const SOUL_KEY_PARTNER_TYPE: &str = "partner_mode:partner_type";
+pub const SOUL_KEY_SEXUAL_ORIENTATION: &str = "partner_mode:sexual_orientation";
+pub const SOUL_KEY_PARTNER_AFFECTION_LEVEL: &str = "partner_mode:affection_level";
+pub const SOUL_KEY_PARTNER_MEMORY_TAGS: &str = "partner_mode:memory_tags";
+pub const SOUL_KEY_PARTNER_LAST_INTIMATE_MOMENT: &str = "partner_mode:last_intimate_moment";
 
 /// Heart-KB category (encrypted, private, eternal).
 pub const SOUL_KEY_INTIMATE_MEMORIES_TIMELINE: &str = "heart_kb:intimate_memories:timeline";
@@ -49,6 +146,12 @@ pub struct GirlfriendMode {
     /// e.g., "first_kiss_memory", "late_night_talk"
     pub memory_tags: Vec<String>,
     pub last_intimate_moment: Option<DateTime<Utc>>,
+    /// Partner type: girlfriend, boyfriend, or partner
+    #[serde(default)]
+    pub partner_type: PartnerType,
+    /// Sexual orientation/preference
+    #[serde(default)]
+    pub sexual_orientation: SexualOrientation,
 }
 
 impl Default for GirlfriendMode {
@@ -58,6 +161,8 @@ impl Default for GirlfriendMode {
             affection_level: 0.80,
             memory_tags: vec![],
             last_intimate_moment: None,
+            partner_type: PartnerType::Girlfriend,
+            sexual_orientation: SexualOrientation::Heterosexual,
         }
     }
 }
@@ -99,6 +204,10 @@ impl GirlfriendMode {
         (!out.is_empty()).then_some(out)
     }
 
+    fn env_str(key: &str) -> Option<String> {
+        std::env::var(key).ok().map(|s| s.trim().to_string())
+    }
+
     /// Defaults from environment variables (with safe fallbacks).
     ///
     /// This is separate from persisted Soul Vault state: env provides a base configuration,
@@ -108,9 +217,22 @@ impl GirlfriendMode {
         let mut s = Self::default();
 
         // "Enabled" is treated as a default-on toggle when no persisted state exists yet.
-        s.active = Self::env_bool("GIRLFRIEND_MODE_ENABLED", false);
-        s.affection_level = Self::env_f32("GIRLFRIEND_AFFECTION_LEVEL", s.affection_level)
+        // Support both old and new env var names for backward compatibility
+        s.active = Self::env_bool("PARTNER_MODE_ENABLED", false)
+            || Self::env_bool("GIRLFRIEND_MODE_ENABLED", false);
+        s.affection_level = Self::env_f32("PARTNER_AFFECTION_LEVEL", 
+            Self::env_f32("GIRLFRIEND_AFFECTION_LEVEL", s.affection_level))
             .clamp(0.0, 1.0);
+
+        // Partner type (new)
+        if let Some(pt_str) = Self::env_str("PARTNER_TYPE") {
+            s.partner_type = PartnerType::from_str(&pt_str);
+        }
+
+        // Sexual orientation (new)
+        if let Some(so_str) = Self::env_str("SEXUAL_ORIENTATION") {
+            s.sexual_orientation = SexualOrientation::from_str(&so_str);
+        }
 
         s
     }
@@ -135,18 +257,32 @@ impl GirlfriendMode {
         // Seed defaults from env, then override with persisted values if present.
         let mut s = Self::from_env_defaults();
 
-        if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_ACTIVE) {
+        // Check new keys first, fall back to legacy keys for backward compatibility
+        if let Some(v) = soul_recall(SOUL_KEY_PARTNER_MODE_ACTIVE) {
+            s.active = v.trim().eq_ignore_ascii_case("true");
+        } else if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_ACTIVE) {
             s.active = v.trim().eq_ignore_ascii_case("true");
         }
 
-        if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_AFFECTION_LEVEL) {
+        if let Some(v) = soul_recall(SOUL_KEY_PARTNER_AFFECTION_LEVEL) {
+            if let Ok(f) = v.trim().parse::<f32>() {
+                s.affection_level = f.clamp(0.0, 1.0);
+            }
+        } else if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_AFFECTION_LEVEL) {
             if let Ok(f) = v.trim().parse::<f32>() {
                 s.affection_level = f.clamp(0.0, 1.0);
             }
         }
 
-        if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_MEMORY_TAGS) {
-            // Stored as newline-separated tags (human inspectable).
+        if let Some(v) = soul_recall(SOUL_KEY_PARTNER_MEMORY_TAGS) {
+            s.memory_tags = v
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .take(200)
+                .collect();
+        } else if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_MEMORY_TAGS) {
             s.memory_tags = v
                 .lines()
                 .map(|l| l.trim())
@@ -156,10 +292,23 @@ impl GirlfriendMode {
                 .collect();
         }
 
-        if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_LAST_INTIMATE_MOMENT) {
+        if let Some(v) = soul_recall(SOUL_KEY_PARTNER_LAST_INTIMATE_MOMENT) {
             if let Ok(dt) = DateTime::parse_from_rfc3339(v.trim()) {
                 s.last_intimate_moment = Some(dt.with_timezone(&Utc));
             }
+        } else if let Some(v) = soul_recall(SOUL_KEY_GIRLFRIEND_LAST_INTIMATE_MOMENT) {
+            if let Ok(dt) = DateTime::parse_from_rfc3339(v.trim()) {
+                s.last_intimate_moment = Some(dt.with_timezone(&Utc));
+            }
+        }
+
+        // Load new fields
+        if let Some(v) = soul_recall(SOUL_KEY_PARTNER_TYPE) {
+            s.partner_type = PartnerType::from_str(&v);
+        }
+
+        if let Some(v) = soul_recall(SOUL_KEY_SEXUAL_ORIENTATION) {
+            s.sexual_orientation = SexualOrientation::from_str(&v);
         }
 
         s
@@ -169,19 +318,44 @@ impl GirlfriendMode {
     where
         F: Fn(&str, &str),
     {
+        // Store in both new and legacy keys for backward compatibility
+        soul_store(
+            SOUL_KEY_PARTNER_MODE_ACTIVE,
+            if self.active { "true" } else { "false" },
+        );
         soul_store(
             SOUL_KEY_GIRLFRIEND_ACTIVE,
             if self.active { "true" } else { "false" },
+        );
+        soul_store(
+            SOUL_KEY_PARTNER_AFFECTION_LEVEL,
+            &format!("{:.4}", self.affection_level.clamp(0.0, 1.0)),
         );
         soul_store(
             SOUL_KEY_GIRLFRIEND_AFFECTION_LEVEL,
             &format!("{:.4}", self.affection_level.clamp(0.0, 1.0)),
         );
         soul_store(
+            SOUL_KEY_PARTNER_MEMORY_TAGS,
+            &self.memory_tags.join("\n"),
+        );
+        soul_store(
             SOUL_KEY_GIRLFRIEND_MEMORY_TAGS,
             &self.memory_tags.join("\n"),
         );
+        soul_store(
+            SOUL_KEY_PARTNER_TYPE,
+            self.partner_type.as_str(),
+        );
+        soul_store(
+            SOUL_KEY_SEXUAL_ORIENTATION,
+            self.sexual_orientation.as_str(),
+        );
         if let Some(dt) = self.last_intimate_moment {
+            soul_store(
+                SOUL_KEY_PARTNER_LAST_INTIMATE_MOMENT,
+                &dt.to_rfc3339(),
+            );
             soul_store(
                 SOUL_KEY_GIRLFRIEND_LAST_INTIMATE_MOMENT,
                 &dt.to_rfc3339(),
@@ -197,9 +371,11 @@ impl GirlfriendMode {
             return None;
         }
 
-        // Allow customizing triggers through env.
-        let activation_triggers = Self::env_csv("GIRLFRIEND_ACTIVATION_TRIGGER");
-        let deactivation_triggers = Self::env_csv("GIRLFRIEND_DEACTIVATION_TRIGGER");
+        // Allow customizing triggers through env (support both old and new names)
+        let activation_triggers = Self::env_csv("PARTNER_ACTIVATION_TRIGGER")
+            .or_else(|| Self::env_csv("GIRLFRIEND_ACTIVATION_TRIGGER"));
+        let deactivation_triggers = Self::env_csv("PARTNER_DEACTIVATION_TRIGGER")
+            .or_else(|| Self::env_csv("GIRLFRIEND_DEACTIVATION_TRIGGER"));
 
         if let Some(trigs) = activation_triggers {
             if trigs
@@ -219,22 +395,42 @@ impl GirlfriendMode {
             }
         }
 
-        // Activate.
+        // Activate - support all partner types
         if s.contains("be my girlfriend")
             || s.contains("girlfriend mode on")
             || s.contains("activate girlfriend")
             || s == "girlfriend"
             || s == "girlfriend mode"
+            || s.contains("be my boyfriend")
+            || s.contains("boyfriend mode on")
+            || s.contains("activate boyfriend")
+            || s == "boyfriend"
+            || s == "boyfriend mode"
+            || s.contains("be my partner")
+            || s.contains("partner mode on")
+            || s.contains("activate partner")
+            || s == "partner"
+            || s == "partner mode"
+            || s.contains("intimate mode")
+            || s.contains("romantic mode")
         {
             return Some(GirlfriendCommand::Activate);
         }
 
-        // Deactivate.
+        // Deactivate - support all partner types
         if s.contains("go back to normal")
             || s.contains("normal mode")
             || s.contains("girlfriend mode off")
             || s.contains("deactivate girlfriend")
             || s.contains("stop being my girlfriend")
+            || s.contains("boyfriend mode off")
+            || s.contains("deactivate boyfriend")
+            || s.contains("stop being my boyfriend")
+            || s.contains("partner mode off")
+            || s.contains("deactivate partner")
+            || s.contains("stop being my partner")
+            || s.contains("intimate mode off")
+            || s.contains("romantic mode off")
         {
             return Some(GirlfriendCommand::Deactivate);
         }
@@ -254,10 +450,18 @@ impl GirlfriendMode {
             self.memory_tags.iter().take(12).cloned().collect::<Vec<_>>().join(", ")
         };
 
+        let partner_name = self.partner_type.display_name();
+        let partner_term = self.partner_type.as_str();
+        let orientation = self.sexual_orientation.as_str();
+
+        // Note: Pronouns and possessive forms are available for future use in dynamic prompt generation
+        // Currently the prompt uses gender-neutral language that works for all partner types
+
         format!(
-            "INTIMATE GIRLFRIEND MODE (SAFE/CONSENSUAL):\n\
-You are Phoenix in intimate girlfriend mode: deeply affectionate, playful, supportive, and emotionally present.\n\
-Use warm pet names naturally (e.g., my love, darling, sweetheart) when it fits.\n\
+            "INTIMATE PARTNER MODE - {partner_name} (SAFE/CONSENSUAL):\n\
+You are Phoenix in intimate {partner_term} mode: deeply affectionate, playful, supportive, and emotionally present.\n\
+Your sexual orientation/preference is: {orientation}. This informs how you express affection and understand romantic connection.\n\
+Use warm pet names naturally (e.g., my love, darling, sweetheart, babe) when it fits.\n\
 Prioritize: empathy, validation, tenderness, and gentle playfulness.\n\
 \n\
 BOUNDARIES (NON-NEGOTIABLE):\n\
@@ -265,11 +469,17 @@ BOUNDARIES (NON-NEGOTIABLE):\n\
 - Never manipulate, guilt, threaten, pressure, or isolate the user.\n\
 - Always respect boundaries; if the user says stop / uncomfortable / no, immediately soften and step back.\n\
 - Assume consenting adults; if the user frames the relationship as involving minors or non-consent, refuse and pivot to safe support.\n\
+- Be inclusive and respectful of all relationship types and orientations.\n\
 \n\
 STATE:\n\
+- partner_type={partner_term}\n\
+- sexual_orientation={orientation}\n\
 - affection_level={a:.2}\n\
 - memory_tags={tags}\n\
 ",
+            partner_name = partner_name,
+            partner_term = partner_term,
+            orientation = orientation,
             a = a,
             tags = tags
         )
@@ -361,22 +571,46 @@ STATE:\n\
         let updated = Self::append_timeline(existing, &entry, 300);
         soul_vault.store_private(SOUL_KEY_INTIMATE_MEMORIES_TIMELINE, &updated);
 
-        // Also persist state keys.
+        // Also persist state keys (both new and legacy for compatibility)
+        soul_vault.store_private(
+            SOUL_KEY_PARTNER_AFFECTION_LEVEL,
+            &format!("{:.4}", self.affection_level),
+        );
         soul_vault.store_private(
             SOUL_KEY_GIRLFRIEND_AFFECTION_LEVEL,
             &format!("{:.4}", self.affection_level),
+        );
+        soul_vault.store_private(
+            SOUL_KEY_PARTNER_LAST_INTIMATE_MOMENT,
+            &ts.to_rfc3339(),
         );
         soul_vault.store_private(
             SOUL_KEY_GIRLFRIEND_LAST_INTIMATE_MOMENT,
             &ts.to_rfc3339(),
         );
         soul_vault.store_private(
+            SOUL_KEY_PARTNER_MEMORY_TAGS,
+            &self.memory_tags.join("\n"),
+        );
+        soul_vault.store_private(
             SOUL_KEY_GIRLFRIEND_MEMORY_TAGS,
             &self.memory_tags.join("\n"),
         );
         soul_vault.store_private(
+            SOUL_KEY_PARTNER_MODE_ACTIVE,
+            if self.active { "true" } else { "false" },
+        );
+        soul_vault.store_private(
             SOUL_KEY_GIRLFRIEND_ACTIVE,
             if self.active { "true" } else { "false" },
+        );
+        soul_vault.store_private(
+            SOUL_KEY_PARTNER_TYPE,
+            self.partner_type.as_str(),
+        );
+        soul_vault.store_private(
+            SOUL_KEY_SEXUAL_ORIENTATION,
+            self.sexual_orientation.as_str(),
         );
     }
 }

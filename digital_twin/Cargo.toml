@@ -1,0 +1,21 @@
+[package]
+name = "digital_twin"
+version = "0.1.0"
+edition = "2021"
+description = "Full system access and digital twin capabilities for Phoenix AGI (research/internal use only)"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.38", features = ["full"] }
+thirtyfour = "0.31"          # Selenium WebDriver bindings for browser automation
+reqwest = { version = "0.12", features = ["json"] }
+walkdir = "2.5"              # Recursive filesystem traversal
+
+# Optional: for advanced features (uncomment if needed)
+nokhwa = "0.10"            # Webcam access (video input)
+cpal = "0.15"              # Audio input
+rodio = "0.18"             # Audio playback
+
+[features]
+default = []
+full-access = []             # Marker feature for full system access mode

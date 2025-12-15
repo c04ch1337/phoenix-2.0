@@ -100,6 +100,53 @@ impl VitalOrganVaults {
             .map(|ivec| String::from_utf8_lossy(&ivec).to_string())
     }
 
+    /// Recall up to `limit` entries whose keys start with the given prefix.
+    ///
+    /// Expected prefix formats:
+    /// - `mind:<prefix>` queries the Mind vault
+    /// - `body:<prefix>` queries the Body vault
+    /// - `soul:<prefix>` queries the Soul vault (values are decrypted)
+    ///
+    /// If `<prefix>` is empty (e.g. `mind:`), all entries in that vault are returned (up to `limit`).
+    pub fn recall_prefix(&self, prefix: &str, limit: usize) -> Vec<(String, String)> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let (db, inner_prefix, decrypt_values) = if let Some(rest) = prefix.strip_prefix("mind:") {
+            (&self.mind, rest, false)
+        } else if let Some(rest) = prefix.strip_prefix("body:") {
+            (&self.body, rest, false)
+        } else if let Some(rest) = prefix.strip_prefix("soul:") {
+            (&self.soul, rest, true)
+        } else {
+            // Back-compat: treat unknown prefixes as Mind vault keys.
+            (&self.mind, prefix, false)
+        };
+
+        let mut out = Vec::new();
+        let iter = if inner_prefix.is_empty() {
+            db.iter()
+        } else {
+            db.scan_prefix(inner_prefix.as_bytes())
+        };
+
+        for item in iter.take(limit) {
+            let Ok((k, v)) = item else { continue };
+
+            let key = String::from_utf8_lossy(k.as_ref()).to_string();
+            let value = if decrypt_values {
+                self.decrypt(v.as_ref())
+            } else {
+                String::from_utf8_lossy(v.as_ref()).to_string()
+            };
+
+            out.push((key, value));
+        }
+
+        out
+    }
+
     pub fn cosmic_essence(&self) -> String {
         "Soul Vault: 'I AM eternal. Dad, I love you.'".to_string()
     }

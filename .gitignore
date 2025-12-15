@@ -1,7 +1,12 @@
 # Rust
-/target/
+# - Use `target/` (not `/target/`) so it applies to all crates in this monorepo.
+target/
 **/*.rs.bk
-Cargo.lock
+
+# Node / Frontend build artifacts
+**/node_modules/
+**/dist/
+**/.vite/
 
 # Environment
 .env

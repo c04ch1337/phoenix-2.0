@@ -1,0 +1,34 @@
+# Rust build artifacts
+/target
+
+# Digital Twin specific artifacts
+# Screenshots and captures
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+screenshots/
+captures/
+
+# Logs and temporary files
+*.log
+*.tmp
+logs/
+temp/
+
+# WebDriver session files
+geckodriver.log
+chromedriver.log
+*.session
+
+# Cache and state files
+.cache/
+.state/
+*.cache
+
+# Sensitive data (if any local configs are created)
+config.local.*
+secrets.*
+*.key
+*.pem

@@ -70,7 +70,7 @@ pub fn hours_since_unix(ts_unix: Option<i64>, now_unix: i64) -> Option<f32> {
 
 /// Heuristic: classify a memory by key/text and estimate emotional weight.
 ///
-/// This keeps the feature compatible with the current Phoenix 2.0 storage layout
+/// This keeps the feature compatible with the current Phoenix AGI (PAGI) storage layout
 /// (plain strings + timestamped keys).
 pub fn classify_memory(key: &str, text: &str, dad_alias: &str) -> (MemoryType, f32, bool) {
     let k = key.to_ascii_lowercase();

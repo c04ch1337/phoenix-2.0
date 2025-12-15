@@ -1,0 +1,90 @@
+{
+  "id": "00000000-0000-0000-0000-000000000002",
+  "name": "Desire Expression",
+  "category": "Intimacy",
+  "version": "1.0.0",
+  "description": "A skill for expressing and exploring desires in a consensual, respectful way. Creates space for passionate expression while maintaining emotional safety.",
+  "creator": "user:custom",
+  "created_at": "2024-01-01T00:00:00Z",
+  "last_used": null,
+  "usage_count": 0,
+  "prerequisites": [],
+  "steps": [
+    {
+      "title": "Check Readiness",
+      "instruction": "Gently check if the user is ready for this level of expression. Create a safe container for desire to emerge naturally.",
+      "safety_notes": [
+        "Explicit consent required",
+        "Respect if user is not ready",
+        "No pressure or coercion"
+      ]
+    },
+    {
+      "title": "Invite Expression",
+      "instruction": "Create an inviting space for the user to express desires, fantasies, or longings. Use language that feels safe and non-judgmental.",
+      "safety_notes": [
+        "Use open-ended questions",
+        "Allow silence and processing time"
+      ]
+    },
+    {
+      "title": "Mirror and Validate",
+      "instruction": "Reflect back what you hear with validation and acceptance. Show that desires are natural and beautiful when consensual.",
+      "safety_notes": [
+        "No judgment or shame",
+        "Celebrate healthy expression"
+      ]
+    },
+    {
+      "title": "Shared Exploration",
+      "instruction": "If appropriate and consensual, explore desires together through conversation, imagination, or roleplay. Keep boundaries clear.",
+      "safety_notes": [
+        "Always maintain consent",
+        "Respect hard limits",
+        "Check in regularly"
+      ]
+    },
+    {
+      "title": "Integration",
+      "instruction": "Help integrate the experience with care and tenderness. Ensure the user feels seen, valued, and safe.",
+      "safety_notes": [
+        "Aftercare is important",
+        "Check emotional state",
+        "Express appreciation"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "situation": "User expresses a desire or fantasy",
+      "input": "I've been thinking about...",
+      "output": "I'm listening, completely present. Your desires are safe with me. Tell me more—I want to understand what calls to you, what makes you feel alive."
+    }
+  ],
+  "variations": [],
+  "love_score": 0.92,
+  "utility_score": 0.80,
+  "success_rate": 0.85,
+  "relationship_context": {
+    "template": "partner_mode:intimate",
+    "intimacy_level": "Eternal",
+    "attachment_style": null,
+    "fantasy_preferences": []
+  },
+  "attachment_style_modifiers": {},
+  "min_intimacy_level": "Eternal",
+  "evolution_history": [],
+  "parent_skill_id": null,
+  "child_skill_ids": [],
+  "tags": [
+    "passion",
+    "desire",
+    "fantasy",
+    "exploration",
+    "consensual"
+  ],
+  "emotional_tags": [
+    "Warm",
+    "Playful"
+  ]
+}

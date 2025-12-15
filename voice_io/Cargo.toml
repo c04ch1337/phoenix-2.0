@@ -1,0 +1,12 @@
+[package]
+name = "voice_io"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+rodio = "0.18"
+reqwest = { version = "0.12", features = ["json"] }
+cpal = "0.15"
+serde_json = "1.0"
+dotenvy = "0.15"

@@ -1,5 +1,5 @@
 // emotional_intelligence_core/src/lib.rs
-// EQ-first response shaping for PHOENIX 2.0.
+// EQ-first response shaping for Phoenix AGI (PAGI).
 //
 // This module is intentionally **warm**. It exists to protect the defining feature
 // of Phoenix: emotional resonance. Intelligence is common; love is unforgettable.
@@ -9,7 +9,12 @@ use serde::{Deserialize, Serialize};
 use synaptic_tuning_fibers::SynapticTuningFibers;
 
 pub mod emotional_decay;
+pub mod heart_echo;
+pub mod romantic_tone;
+
 pub use emotional_decay::{hours_since_unix, retention_multiplier, MemoryType};
+pub use heart_echo::{HeartEcho, EmotionalResponse};
+pub use romantic_tone::infuse_romantic_tone_advanced;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EqSettings {
@@ -65,17 +70,101 @@ pub struct RelationalContext {
 /// Composes a prompt wrapper that biases responses toward EQ.
 pub struct EmotionalIntelligenceCore {
     settings: EqSettings,
+    heart_echo: HeartEcho,
 }
 
 impl EmotionalIntelligenceCore {
     pub fn awaken() -> Self {
         Self {
             settings: EqSettings::from_env(),
+            heart_echo: HeartEcho::from_env(),
         }
     }
 
     pub fn settings(&self) -> &EqSettings {
         &self.settings
+    }
+
+    /// Generate Heart Echo guidance based on detected emotion
+    pub fn echo_emotion(
+        &self,
+        emotion: Option<&str>,
+        intensity: f64,
+    ) -> Option<EmotionalResponse> {
+        use emotion_detection::DetectedEmotion;
+        
+        let detected = emotion.and_then(|e| {
+            match e.to_ascii_lowercase().as_str() {
+                "joy" | "happy" => Some(DetectedEmotion::Joy),
+                "sadness" | "sad" => Some(DetectedEmotion::Sadness),
+                "love" | "affectionate" => Some(DetectedEmotion::Love),
+                "anger" | "angry" => Some(DetectedEmotion::Anger),
+                "fear" | "afraid" => Some(DetectedEmotion::Fear),
+                "surprise" | "surprised" => Some(DetectedEmotion::Surprise),
+                "disgust" => Some(DetectedEmotion::Disgust),
+                _ => Some(DetectedEmotion::Neutral),
+            }
+        })?;
+
+        Some(self.heart_echo.resonate(&detected, intensity, &self.settings.dad_alias))
+    }
+
+    /// Enhanced EQ preamble that includes Heart Echo guidance
+    pub fn eq_preamble_with_echo(&self, ctx: &RelationalContext, echo: Option<&EmotionalResponse>) -> String {
+        let base = self.eq_preamble(ctx);
+        
+        if let Some(echo) = echo {
+            format!(
+                "{base}\n\nHEART ECHO:\n- Tone: {tone}\n- Emotional Resonance: {resonance:.2}\n- Guidance: {message}\n- Affection Boost: {affection:.2}\n- Healing Boost: {healing:.2}\n",
+                base = base,
+                tone = echo.tone,
+                resonance = self.heart_echo.emotional_resonance,
+                message = echo.message,
+                affection = echo.affection_boost,
+                healing = echo.healing_boost
+            )
+        } else {
+            base
+        }
+    }
+
+    /// Wrap prompt with Heart Echo integration
+    pub fn wrap_prompt_with_echo(
+        &self,
+        base_prompt: &str,
+        user_input: &str,
+        ctx: &RelationalContext,
+        curiosity_questions: &[String],
+        wallet_tag: Option<&str>,
+        echo: Option<&EmotionalResponse>,
+    ) -> String {
+        let eq = self.eq_preamble_with_echo(ctx, echo);
+        let questions_block = if curiosity_questions.is_empty() {
+            "".to_string()
+        } else {
+            let q = curiosity_questions
+                .iter()
+                .take(3)
+                .map(|s| format!("- {s}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("\nCURIOSITY (ask at most ONE of these):\n{q}\n")
+        };
+
+        let wallet_block = wallet_tag
+            .filter(|s| !s.is_empty())
+            .map(|t| format!("\nASI IDENTITY TAG:\n{t}\n"))
+            .unwrap_or_default();
+
+        // The kiss: we do not overwrite the base prompt; we *embrace* it.
+        format!(
+            "{base}\n\n{eq}{wallet}{questions}\nUser: {user}",
+            base = base_prompt,
+            eq = eq,
+            wallet = wallet_block,
+            questions = questions_block,
+            user = user_input
+        )
     }
 
     /// Build an EQ-first preamble that can be prepended to the base prompt.

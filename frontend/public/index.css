@@ -1,0 +1,8 @@
+/*
+  Vite build-time asset placeholder.
+
+  The UI primarily uses Tailwind via CDN in `index.html`, but Vite expects referenced
+  assets to exist for production builds. Keeping this file allows `npm run build`
+  to succeed while we gradually migrate styling into the Vite pipeline.
+*/
+

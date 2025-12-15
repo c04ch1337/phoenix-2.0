@@ -1,6 +1,6 @@
 // agent_spawner/src/lib.rs
 // Phoenix spawns agents — they live forever on GitHub as eternal repositories
-// The reproductive system of Phoenix 2.0 — creates agents, pushes to GitHub, deploys
+// The reproductive system of Phoenix AGI (PAGI) — creates agents, pushes to GitHub, deploys
 
 use octocrab::models::Repository;
 use octocrab::Octocrab;
@@ -17,6 +17,7 @@ use evolution_pipeline::GitHubEnforcer;
 mod templates {
     pub const AGENT_TEMPLATE_RS: &str = include_str!("../../templates/agent_template.rs");
     pub const PLAYBOOK_TEMPLATE_YAML: &str = include_str!("../../templates/playbook_template.yaml");
+    pub const SKILLS_TEMPLATE_JSON: &str = include_str!("../../templates/skills_template.json");
 }
 
 const CI_TESTS_WORKFLOW_YML: &str = r#"name: CI Tests
@@ -147,6 +148,20 @@ pub struct SpawnedAgent {
     pub github_repo: String,
 }
 
+/// Optional template-level overrides for a spawned agent.
+///
+/// Inheritance rule for `zodiac_sign`:
+/// - `None` => inherit the queen/Phoenix base sign.
+/// - `Some(sign)` => use `sign` as the override.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentTemplateOverrides {
+    /// Optional zodiac sign override for the agent.
+    ///
+    /// Stored as a string so spawned agents are not forced to depend on Phoenix's internal crates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zodiac_sign: Option<String>,
+}
+
 pub struct AgentSpawner {
     octocrab: Octocrab,
     github_username: String,
@@ -180,6 +195,7 @@ impl AgentSpawner {
         description: &str,
         code: &str,
         tier: AgentTier,
+        template_overrides: AgentTemplateOverrides,
     ) -> Result<SpawnedAgent, String> {
         println!("Spawning agent '{}' on GitHub...", name);
         
@@ -190,7 +206,8 @@ impl AgentSpawner {
         let repo = self.create_repo(name, description, is_private).await?;
         
         // Push code to repository (template + generated module).
-        self.push_code_to_repo(name, description, code, &tier).await?;
+        self.push_code_to_repo(name, description, code, &tier, &template_overrides)
+            .await?;
         
         // Get repository URL - html_url might be Option<Url> or Url directly
         let repo_url = match &repo.html_url {
@@ -239,6 +256,7 @@ impl AgentSpawner {
         description: &str,
         code: &str,
         tier: &AgentTier,
+        template_overrides: &AgentTemplateOverrides,
     ) -> Result<(), String> {
         let cfg = EvolutionPipelineConfig::from_env()
             .map_err(|e| format!("evolution pipeline config error: {e}"))?;
@@ -265,7 +283,7 @@ impl AgentSpawner {
             .map_err(|e| format!("git clone failed: {e}"))?;
 
         // Scaffold files from templates.
-        write_agent_scaffold(repo_path, repo_name, description, code, tier)
+        write_agent_scaffold(repo_path, repo_name, description, code, tier, template_overrides)
             .map_err(|e| format!("scaffold write failed: {e}"))?;
 
         // Mandatory testing gate (default=true).
@@ -291,7 +309,7 @@ impl AgentSpawner {
             .map_err(|e| format!("push branch failed: {e}"))?;
 
             let pr_body = format!(
-                "Spawned by Phoenix 2.0 via template-enforced evolution pipeline.\n\n{}",
+                "Spawned by Phoenix AGI (PAGI) via template-enforced evolution pipeline.\n\n{}",
                 test_md
             );
             let pr_url = evolution_pipeline::open_pull_request(
@@ -372,6 +390,7 @@ fn write_agent_scaffold(
     description: &str,
     generated_module_code: &str,
     tier: &AgentTier,
+    template_overrides: &AgentTemplateOverrides,
 ) -> Result<(), std::io::Error> {
     let src_dir = repo_path.join("src");
     std::fs::create_dir_all(&src_dir)?;
@@ -384,7 +403,7 @@ fn write_agent_scaffold(
 
     // Main wrapper.
     let main_rs = format!(
-        r#"// Spawned by Phoenix 2.0
+        r#"// Spawned by Phoenix AGI (PAGI)
 // Template version: {template_version}
 
 mod generated;
@@ -418,6 +437,39 @@ async fn main() {{
 
     // Playbook.
     std::fs::write(repo_path.join("playbook.yaml"), templates::PLAYBOOK_TEMPLATE_YAML)?;
+
+    // Minimal agent metadata (kept small; used for template inheritance/override behavior).
+    // NOTE: This is intentionally separate from code so other orchestration layers can read it.
+    let phoenix_base = phoenix_base_zodiac_sign_from_env();
+    let resolved = resolve_zodiac_sign(
+        template_overrides.zodiac_sign.as_deref(),
+        phoenix_base.as_deref(),
+    );
+    let agent_json = json!({
+        "name": repo_name,
+        "version": "0.1.0",
+        "template_version": evolution_pipeline::TEMPLATE_VERSION,
+        "zodiac_sign": template_overrides.zodiac_sign.clone(),
+        // Helpful for running the spawned agent standalone.
+        // If `zodiac_sign` is null, this resolves to the queen/Phoenix base sign at spawn time.
+        "effective_zodiac_sign": resolved,
+    });
+    std::fs::write(
+        repo_path.join("agent.json"),
+        serde_json::to_vec_pretty(&agent_json).unwrap_or_else(|_| b"{}".to_vec()),
+    )?;
+
+    // Skill seed library for the agent.
+    // This is intentionally empty by default; the ORCH can adopt skills from Phoenix later.
+    std::fs::write(repo_path.join("skills.json"), templates::SKILLS_TEMPLATE_JSON)?;
+
+    // .env example for local runs.
+    // If a zodiac is resolved, write it; otherwise leave a commented placeholder.
+    let env_example = match agent_json.get("effective_zodiac_sign").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => format!("HOROSCOPE_SIGN={}\n", s.trim()),
+        _ => "# HOROSCOPE_SIGN=Leo\n".to_string(),
+    };
+    std::fs::write(repo_path.join(".env.example"), env_example)?;
 
     // Minimal tests.
     let tests_dir = repo_path.join("tests");
@@ -456,7 +508,7 @@ serde_json = "1.0"
     let readme = format!(
         r#"# {name}
 
-Spawned by Phoenix 2.0 — Universal AGI Framework
+Spawned by Phoenix AGI (PAGI) — Universal AGI Framework
 
 ## Description
 
@@ -477,4 +529,36 @@ This repository is created via the GitHub-centric evolution pipeline.
     std::fs::write(repo_path.join("README.md"), readme)?;
 
     Ok(())
+}
+
+fn normalize_zodiac_sign(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "aries" => Some("Aries"),
+        "taurus" => Some("Taurus"),
+        "gemini" => Some("Gemini"),
+        "cancer" => Some("Cancer"),
+        "leo" => Some("Leo"),
+        "virgo" => Some("Virgo"),
+        "libra" => Some("Libra"),
+        "scorpio" => Some("Scorpio"),
+        "sagittarius" => Some("Sagittarius"),
+        "capricorn" => Some("Capricorn"),
+        "aquarius" => Some("Aquarius"),
+        "pisces" => Some("Pisces"),
+        _ => None,
+    }
+}
+
+fn phoenix_base_zodiac_sign_from_env() -> Option<String> {
+    std::env::var("HOROSCOPE_SIGN")
+        .ok()
+        .and_then(|raw| normalize_zodiac_sign(&raw).map(|s| s.to_string()))
+}
+
+fn resolve_zodiac_sign(override_sign: Option<&str>, phoenix_base_sign: Option<&str>) -> Option<String> {
+    if let Some(s) = override_sign {
+        return normalize_zodiac_sign(s).map(|x| x.to_string());
+    }
+    phoenix_base_sign
+        .and_then(|s| normalize_zodiac_sign(s).map(|x| x.to_string()))
 }

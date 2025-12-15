@@ -1,0 +1,6 @@
+{
+  "schema": "phoenix.skill_system.v1",
+  "notes": "This file is a seed skill library for a spawned agent. Agents may add local skills, and ORCHs may sync skills back to Phoenix later.",
+  "skills": []
+}
+

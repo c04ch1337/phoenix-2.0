@@ -1,8 +1,8 @@
-# Phoenix 2.0 Setup Guide
+# Phoenix AGI (PAGI) Setup Guide
 
 ## Environment Configuration
 
-Phoenix 2.0 requires an OpenRouter API key to enable the LLM Orchestrator (Vocal Cords).
+Phoenix AGI (PAGI) requires an OpenRouter API key to enable the LLM Orchestrator (Vocal Cords).
 
 ### Step 1: Get Your OpenRouter API Key
 
@@ -47,6 +47,46 @@ cargo build --workspace
 ```bash
 cargo run --bin phoenix-tui
 ```
+
+## Web UI (Frontend + API)
+
+Phoenix also ships a web dashboard UI in [`frontend/`](frontend/README.md:1) served by the Actix binary [`phoenix-web`](phoenix-web/src/main.rs:1).
+
+### Option A — Production-style (serve built UI from the Rust server)
+
+1) Build the frontend:
+
+```bash
+./scripts/build_frontend.sh
+```
+
+2) Run the web server:
+
+```bash
+cargo run --bin phoenix-web
+```
+
+Open `http://127.0.0.1:8888`.
+
+### Option B — Dev mode (Vite dev server + API proxy)
+
+Run the backend:
+
+```bash
+cargo run --bin phoenix-web
+```
+
+Then in another terminal, run the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+On Windows you can also use [`scripts/dev_web_ui.cmd`](scripts/dev_web_ui.cmd:1).
 
 ## LLM Orchestrator Features
 

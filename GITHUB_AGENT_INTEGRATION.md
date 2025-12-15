@@ -1,8 +1,8 @@
-# GitHub Agent Integration — Phoenix 2.0
+# GitHub Agent Integration — Phoenix AGI (PAGI)
 
 ## Overview
 
-Phoenix 2.0 now includes a **GitHub Agent Spawning System** that allows Phoenix to autonomously create agents, push them to GitHub repositories, and optimize them via CAOS (Cloud AGI Optimization Service).
+Phoenix AGI (PAGI) now includes a **GitHub Agent Spawning System** that allows Phoenix to autonomously create agents, push them to GitHub repositories, and optimize them via CAOS (Cloud AGI Optimization Service).
 
 ## Architecture
 

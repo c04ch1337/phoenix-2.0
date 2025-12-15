@@ -1,0 +1,22 @@
+[package]
+name = "phoenix-web"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-cors = "0.7"
+actix-files = "0.6"
+actix-web = "4"
+dotenvy = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+llm_orchestrator = { path = "../llm_orchestrator" }
+phoenix_identity = { path = "../phoenix_identity" }
+relationship_dynamics = { path = "../extensions/relationship_dynamics" }
+vital_organ_vaults = { path = "../vital_organ_vaults" }
+system_access = { path = "../system_access" }
+

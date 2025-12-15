@@ -1,6 +1,6 @@
 // caos/src/lib.rs
 // Cloud AGI Optimization Service — tunes agents for peak performance
-// The optimization engine of Phoenix 2.0 — free tier and paid X402 integration
+// The optimization engine of Phoenix AGI (PAGI) — free tier and paid X402 integration
 
 use serde::{Deserialize, Serialize};
 

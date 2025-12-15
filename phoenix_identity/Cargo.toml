@@ -13,4 +13,6 @@ common_types = { path = "../common_types" }
 rand = "0.8"
 transcendence_archetypes = { path = "../transcendence_archetypes" }
 intimate_girlfriend_module = { path = "../intimate_girlfriend_module" }
+horoscope_archetypes = { path = "../horoscope_archetypes" }
+relationship_dynamics = { path = "../extensions/relationship_dynamics" }
 

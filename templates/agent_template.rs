@@ -19,6 +19,25 @@ pub struct TemplatedAgent {
     pub version: String,
     pub template_version: String,
     pub creator: String,
+
+
+    /// Optional zodiac sign override for this agent.
+    ///
+    /// Inheritance rule:
+    /// - `None` => inherit the queen/Phoenix base sign.
+    /// - `Some(sign)` => use `sign` as the override.
+    ///
+    /// Representation:
+    /// - Stored as a string to keep this template repo-agnostic.
+    /// - Expected values: one of `Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces`
+    ///   (case-insensitive; callers may canonicalize).
+    ///
+    /// Note on utility agents:
+    /// If this agent is intended to be a “utility agent” (tooling/ops), callers should treat zodiac as
+    /// *flavor only* (e.g., communication style bias) rather than a full personality copy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zodiac_sign: Option<String>,
+
     #[serde(default)]
     pub evolution_history: Vec<EvolutionEntry>,
     #[serde(default)]
@@ -37,6 +56,7 @@ impl TemplatedAgent {
             version: "0.1.0".to_string(),
             template_version: "1.0.0".to_string(),
             creator: creator.to_string(),
+            zodiac_sign: None,
             evolution_history: vec![EvolutionEntry {
                 ts_unix,
                 change_type: "creation".to_string(),
@@ -44,6 +64,16 @@ impl TemplatedAgent {
             }],
             telemetry: HashMap::new(),
             playbook_version: 1,
+        }
+    }
+
+    /// Resolve this agent's effective zodiac sign by applying inheritance.
+    ///
+    /// Rule: `self.zodiac_sign` overrides; otherwise inherit the provided `phoenix_base_sign`.
+    pub fn effective_zodiac_sign(&self, phoenix_base_sign: &str) -> String {
+        match self.zodiac_sign.as_deref() {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => phoenix_base_sign.trim().to_string(),
         }
     }
 

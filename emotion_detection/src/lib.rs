@@ -99,6 +99,7 @@ impl EmotionDetector {
         if !self.face_enabled {
             return None;
         }
+
         // TODO(feature face-onnx-tract): run FER model against face crop(s).
         None
     }
@@ -178,6 +179,7 @@ impl EmotionDetector {
         }
     }
 }
+
 
 fn env_bool(key: &str) -> Option<bool> {
     std::env::var(key)

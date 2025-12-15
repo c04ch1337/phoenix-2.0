@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::relationship_dynamics::template::{IntimacyLevel, RelationshipTemplate};
 
+use horoscope_archetypes::{CommunicationStyle as ZodiacCommunicationStyle, ZodiacPersonality};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mood {
     Calm,
@@ -51,6 +53,60 @@ impl Default for AIPersonality {
 }
 
 impl AIPersonality {
+    /// Apply the baseline personality tendencies from a zodiac archetype.
+    ///
+    /// This is intentionally *lightweight* and only maps into fields that already exist on
+    /// [`AIPersonality`](extensions/relationship_dynamics/src/relationship_dynamics/ai_personality.rs:32)
+    /// to avoid breaking serialization or existing constructors.
+    pub fn apply_zodiac_base(&mut self, zodiac: ZodiacPersonality) {
+        fn trait_f32(traits: &std::collections::HashMap<String, f64>, key: &str) -> Option<f32> {
+            traits.get(key).copied().map(|v| (v as f32).clamp(0.0, 1.0))
+        }
+
+        fn blend(current: f32, target: f32, weight: f32) -> f32 {
+            (current * (1.0 - weight) + target * weight).clamp(0.0, 1.0)
+        }
+
+        // Direct trait mappings (when present).
+        if let Some(openness) = trait_f32(&zodiac.traits, "openness") {
+            self.openness = openness;
+        }
+
+        // Try the canonical energy key first; fall back to adjacent keys if the dataset changes.
+        if let Some(energy) = trait_f32(&zodiac.traits, "energy")
+            .or_else(|| trait_f32(&zodiac.traits, "initiative"))
+            .or_else(|| trait_f32(&zodiac.traits, "intensity"))
+        {
+            self.energy_level = energy;
+        }
+
+        if let Some(affection_need) = trait_f32(&zodiac.traits, "affection_need") {
+            self.need_for_affection = affection_need;
+        }
+
+        // Indirect mappings: fold additional archetype traits into the existing scalar fields.
+        if let Some(reassurance_need) = trait_f32(&zodiac.traits, "reassurance_need") {
+            self.need_for_affection = blend(self.need_for_affection, reassurance_need, 0.20);
+        }
+
+        if let Some(emotional_availability) = trait_f32(&zodiac.traits, "emotional_availability") {
+            self.openness = blend(self.openness, emotional_availability, 0.20);
+        }
+
+        if let Some(intimacy_depth) = trait_f32(&zodiac.traits, "intimacy_depth") {
+            self.openness = blend(self.openness, intimacy_depth, 0.15);
+            self.need_for_affection = blend(self.need_for_affection, intimacy_depth, 0.10);
+        }
+
+        // Apply the zodiac's preferred style bias.
+        self.communication_style = match zodiac.style_bias {
+            ZodiacCommunicationStyle::Direct => CommunicationStyle::Direct,
+            ZodiacCommunicationStyle::Empathetic => CommunicationStyle::Empathetic,
+            ZodiacCommunicationStyle::Playful => CommunicationStyle::Playful,
+            ZodiacCommunicationStyle::Reflective => CommunicationStyle::Reflective,
+        };
+    }
+
     pub fn current_mood(&self) -> Mood {
         let e = self.energy_level.clamp(0.0, 1.0);
         let a = self.need_for_affection.clamp(0.0, 1.0);

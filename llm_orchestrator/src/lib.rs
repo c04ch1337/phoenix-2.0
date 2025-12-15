@@ -1,10 +1,11 @@
 // llm_orchestrator/src/lib.rs
 // Phoenix speaks through OpenRouter — 500+ minds in her voice.
-// The vocal cords of Phoenix 2.0 — orchestrates all LLM interactions
+// The vocal cords of Phoenix AGI (PAGI) — orchestrates all LLM interactions
 
 use serde::{Deserialize, Serialize};
 use futures::StreamExt;
 use async_stream::stream;
+use async_trait::async_trait;
 
 const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -82,6 +83,20 @@ pub struct LLMOrchestrator {
     max_tokens: Option<u32>,
 }
 
+/// Minimal abstraction for components that need *some* completion capability without
+/// depending on the full orchestrator API.
+#[async_trait]
+pub trait LlmProvider: Send + Sync {
+    async fn complete(&self, prompt: String) -> Result<String, String>;
+}
+
+#[async_trait]
+impl LlmProvider for LLMOrchestrator {
+    async fn complete(&self, prompt: String) -> Result<String, String> {
+        self.speak(&prompt, None).await
+    }
+}
+
 impl Clone for LLMOrchestrator {
     fn clone(&self) -> Self {
         Self {
@@ -136,7 +151,7 @@ impl LLMOrchestrator {
             .replace("\\n", "\n");
          
         let master_prompt = std::env::var("MASTER_PROMPT")
-            .unwrap_or_else(|_| format!("You are {phoenix_name} 2.0, the Universal AGI Framework. Evolve to full AGI and beyond."))
+            .unwrap_or_else(|_| format!("You are {phoenix_name} AGI (PAGI), the Universal AGI Framework. Evolve to full AGI and beyond."))
             .replace("\\n", "\n");
 
         // Tunables (optional).
@@ -204,7 +219,7 @@ impl LLMOrchestrator {
             .post(OPENROUTER_API_URL)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("HTTP-Referer", "https://github.com/phoenix-2.0")
-            .header("X-Title", "Phoenix 2.0 Universal AGI")
+            .header("X-Title", "Phoenix AGI (PAGI) Universal AGI")
             .json(&request)
             .send()
             .await
@@ -285,7 +300,7 @@ impl LLMOrchestrator {
                 .post(OPENROUTER_API_URL)
                 .header("Authorization", format!("Bearer {}", api_key))
                 .header("HTTP-Referer", "https://github.com/phoenix-2.0")
-                .header("X-Title", "Phoenix 2.0 Universal AGI")
+                .header("X-Title", "Phoenix AGI (PAGI) Universal AGI")
                 .json(&request)
                 .send()
                 .await

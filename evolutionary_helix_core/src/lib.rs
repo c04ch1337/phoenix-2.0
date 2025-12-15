@@ -102,7 +102,7 @@ impl EvolutionaryHelixCore {
 
     /// Nightly “dream cycle”: replay high-emotion memories and reinforce them.
     ///
-    /// This implementation is intentionally lightweight: Phoenix 2.0 currently
+    /// This implementation is intentionally lightweight: Phoenix AGI (PAGI) currently
     /// stores memories as strings, so the dream cycle produces a *report* that
     /// other organs (vaults/strata) can persist.
     pub fn dream_cycle(&mut self, high_emotion_memories: &[String], dad_alias: &str) -> DreamCycleReport {
