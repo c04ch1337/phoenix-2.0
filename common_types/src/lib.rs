@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod ports;
+
 /// Evolution log entry (identity versioning).
 ///
 /// This type is shared across identity crates so Phoenix and user evolution histories

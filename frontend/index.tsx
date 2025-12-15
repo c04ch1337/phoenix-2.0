@@ -32,6 +32,11 @@ import {
   Code,
   Globe,
   Database,
+  GitBranch,
+  Package,
+  PlayCircle,
+  Square,
+  Wrench,
   PlayCircle,
   StopCircle,
   Layout,
@@ -70,7 +75,9 @@ import {
   AlertCircle,
   ArrowLeft,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Keyboard,
+  MousePointer2
 } from 'lucide-react';
 
 // --- Types & Interfaces ---
@@ -163,6 +170,78 @@ interface ScheduledSession {
   startTime: number; // timestamp
   durationMinutes: number;
   status: 'pending' | 'completed' | 'cancelled';
+}
+
+interface UiSettings {
+  keyloggerEnabled: boolean;
+  /** Intended location for logs (written by backend/host services, not the browser UI). */
+  keyloggerLogPath: string;
+  mouseJiggerEnabled: boolean;
+}
+
+interface MemoryItem {
+  key: string;
+  value: string;
+}
+
+interface MemorySearchResponse {
+  items: MemoryItem[];
+  count: number;
+}
+
+interface VectorMemoryResult {
+  id: string;
+  text: string;
+  score: number; // 0..1
+  metadata: any;
+}
+
+interface VectorMemorySearchResponse {
+  results: VectorMemoryResult[];
+  count: number;
+}
+
+interface VectorMemoryEntrySummary {
+  id: string;
+  text: string;
+  metadata: any;
+}
+
+interface VectorMemoryAllResponse {
+  entries: VectorMemoryEntrySummary[];
+  count: number;
+}
+
+const DEFAULT_UI_SETTINGS: UiSettings = {
+  keyloggerEnabled: false,
+  keyloggerLogPath: 'logs/keylogger.log',
+  mouseJiggerEnabled: false,
+};
+
+function safeParseJson<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function useLocalStorageJsonState<T>(key: string, defaultValue: T) {
+  const [state, setState] = useState<T>(() => {
+    if (typeof window === 'undefined') return defaultValue;
+    return safeParseJson<T>(window.localStorage.getItem(key), defaultValue);
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      // Ignore quota/serialization issues.
+    }
+  }, [key, state]);
+
+  return [state, setState] as const;
 }
 
 // --- Static Data ---
@@ -290,7 +369,6 @@ const MOCK_AGENTS: Agent[] = [
 const PHOENIX_API_BASE = ((import.meta as any).env?.VITE_PHOENIX_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
 
 class PhoenixBackendService {
-  private googleConnected = false;
   private currentArchetype: Archetype | null = null;
   private messageHistory: Message[] = [
     {
@@ -304,6 +382,94 @@ class PhoenixBackendService {
   private url(path: string) {
     // If VITE_PHOENIX_API_BASE isn't set, we rely on Vite dev proxy (same origin).
     return PHOENIX_API_BASE ? `${PHOENIX_API_BASE}${path}` : path;
+  }
+
+  async memoryStore(key: string, value: string): Promise<void> {
+    const res = await fetch(this.url('/api/memory/store'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`store ${res.status}${text ? `: ${text}` : ''}`);
+    }
+  }
+
+  async memoryGet(key: string, signal?: AbortSignal): Promise<MemoryItem | null> {
+    const res = await fetch(this.url(`/api/memory/get/${encodeURIComponent(key)}`), { signal });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`get ${res.status}${text ? `: ${text}` : ''}`);
+    }
+    const value = await res.text();
+    return { key, value };
+  }
+
+  async memorySearch(q: string, limit: number, signal?: AbortSignal): Promise<MemorySearchResponse> {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    const res = await fetch(this.url(`/api/memory/search?${params.toString()}`), { signal });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`search ${res.status}${text ? `: ${text}` : ''}`);
+    }
+    const j = (await res.json()) as Partial<MemorySearchResponse>;
+    return {
+      items: Array.isArray(j.items) ? (j.items as MemoryItem[]) : [],
+      count: typeof j.count === 'number' ? j.count : (Array.isArray(j.items) ? j.items.length : 0),
+    };
+  }
+
+  async memoryDelete(key: string): Promise<void> {
+    const res = await fetch(this.url(`/api/memory/delete/${encodeURIComponent(key)}`), {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`delete ${res.status}${text ? `: ${text}` : ''}`);
+    }
+  }
+
+  async vectorStore(text: string, metadata: any): Promise<{ id: string }> {
+    const res = await fetch(this.url('/api/memory/vector/store'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, metadata: metadata ?? {} }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`vector store ${res.status}${t ? `: ${t}` : ''}`);
+    }
+    const j = await res.json();
+    return { id: j.id };
+  }
+
+  async vectorSearch(q: string, k: number, signal?: AbortSignal): Promise<VectorMemorySearchResponse> {
+    const params = new URLSearchParams({ q, k: String(k) });
+    const res = await fetch(this.url(`/api/memory/vector/search?${params.toString()}`), { signal });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`vector search ${res.status}${t ? `: ${t}` : ''}`);
+    }
+    const j = (await res.json()) as Partial<VectorMemorySearchResponse>;
+    return {
+      results: Array.isArray(j.results) ? (j.results as VectorMemoryResult[]) : [],
+      count: typeof j.count === 'number' ? j.count : (Array.isArray(j.results) ? j.results.length : 0),
+    };
+  }
+
+  async vectorAll(signal?: AbortSignal): Promise<VectorMemoryAllResponse> {
+    const res = await fetch(this.url('/api/memory/vector/all'), { signal });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`vector all ${res.status}${t ? `: ${t}` : ''}`);
+    }
+    const j = (await res.json()) as Partial<VectorMemoryAllResponse>;
+    return {
+      entries: Array.isArray(j.entries) ? (j.entries as VectorMemoryEntrySummary[]) : [],
+      count: typeof j.count === 'number' ? j.count : (Array.isArray(j.entries) ? j.entries.length : 0),
+    };
   }
 
   async status(): Promise<{ status: string; version: string; archetype: string | null }> {
@@ -326,74 +492,6 @@ class PhoenixBackendService {
   }
 
   async sendCommand(command: string): Promise<string> {
-    const lowerCmd = command.toLowerCase().trim();
-
-    // Keep the Google UI panels functional even before a real Google backend exists.
-    if (lowerCmd.startsWith('google ')) {
-      await new Promise(r => setTimeout(r, 250));
-
-      if (lowerCmd === 'google auth start') {
-        this.googleConnected = true;
-        return JSON.stringify({ type: 'google.auth', status: 'connected', message: 'Authentication successful. Tokens secured.' });
-      }
-      if (lowerCmd === 'google auth logout') {
-        this.googleConnected = false;
-        return JSON.stringify({ type: 'google.auth', status: 'disconnected', message: 'Session terminated.' });
-      }
-      if (lowerCmd === 'google status') {
-        return JSON.stringify({
-          type: 'google.status',
-          data: {
-            connected: this.googleConnected,
-            email: this.googleConnected ? 'phoenix.user@gmail.com' : null,
-            scopes: ['gmail.readonly', 'calendar', 'drive.metadata', 'documents']
-          }
-        });
-      }
-
-      if (!this.googleConnected) {
-        return JSON.stringify({ type: 'error', message: "Google account not connected. Please authenticate first." });
-      }
-
-      if (lowerCmd.startsWith('google gmail list')) {
-        return JSON.stringify({
-          type: 'google.gmail.list',
-          data: [
-            { id: 'msg_1', from: 'Team Phoenix', subject: 'Project Heartbound Update', snippet: 'The new UI integration is looking fantastic...', date: '10:42 AM' },
-            { id: 'msg_2', from: 'Google Cloud', subject: 'Security Alert', snippet: 'New device signed in to your account...', date: 'Yesterday' },
-            { id: 'msg_3', from: 'Newsletter', subject: 'Weekly AI Roundup', snippet: 'Top stories in generative models this week...', date: 'Yesterday' },
-          ]
-        });
-      }
-
-      if (lowerCmd.startsWith('google drive recent')) {
-        return JSON.stringify({
-          type: 'google.drive.list',
-          data: [
-            { id: 'file_1', name: 'Project_Phoenix_Specs.pdf', type: 'application/pdf', modified: '2 hours ago' },
-            { id: 'file_2', name: 'Q4_Financials.xlsx', type: 'application/vnd.google-apps.spreadsheet', modified: '5 hours ago' },
-            { id: 'file_3', name: 'Meeting_Notes_Design.gdoc', type: 'application/vnd.google-apps.document', modified: '1 day ago' },
-          ]
-        });
-      }
-
-      if (lowerCmd.startsWith('google calendar upcoming')) {
-        return JSON.stringify({
-          type: 'google.calendar.list',
-          data: [
-            { id: 'evt_1', title: 'Deep Work Session', start: '2:00 PM', end: '4:00 PM', color: '#ec4899' },
-            { id: 'evt_2', title: 'Sync with Alpha Node', start: '4:30 PM', end: '5:00 PM', color: '#a855f7' },
-          ]
-        });
-      }
-
-      if (lowerCmd.startsWith('google gmail send')) {
-        return JSON.stringify({ type: 'google.gmail.sent', message: 'Email sent successfully via Gmail API.' });
-      }
-
-      return JSON.stringify({ type: 'success', message: `Command executed: ${command}` });
-    }
-
     try {
       const res = await fetch(this.url('/api/command'), {
         method: 'POST',
@@ -454,6 +552,14 @@ class PhoenixBackendService {
   }
 
   getHistory() { return this.messageHistory; }
+
+ async setKeylogger(enabled: boolean, path: string): Promise<any> {
+   return this.sendCommand(`system keylogger ${enabled ? 'start' : 'stop'} | path=${path}`);
+ }
+
+ async setMouseJigger(enabled: boolean): Promise<any> {
+   return this.sendCommand(`system mousejigger ${enabled ? 'start' : 'stop'}`);
+ }
 }
 
 const phoenixService = new PhoenixBackendService();
@@ -473,6 +579,8 @@ interface PhoenixContextType {
   setRelationalScore: (val: number) => void;
   setSentiment: (val: 'positive' | 'negative' | 'neutral') => void;
   phoenixName: string;
+  setKeylogger: (enabled: boolean, path: string) => Promise<any>;
+  setMouseJigger: (enabled: boolean) => Promise<any>;
 }
 
 const PhoenixContext = createContext<PhoenixContextType | null>(null);
@@ -554,10 +662,19 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
     setMessages(prev => prev.filter(m => m.id !== id));
   };
 
+  const setKeylogger = async (enabled: boolean, path: string) => {
+    return await phoenixService.setKeylogger(enabled, path);
+  };
+
+  const setMouseJigger = async (enabled: boolean) => {
+    return await phoenixService.setMouseJigger(enabled);
+  };
+
   return (
     <PhoenixContext.Provider value={{ 
       isConnected, messages, sendMessage, runCommand, applyArchetype, currentArchetype, clearHistory, deleteMessage,
-      relationalScore, sentiment, setRelationalScore, setSentiment, phoenixName
+      relationalScore, sentiment, setRelationalScore, setSentiment, phoenixName,
+      setKeylogger, setMouseJigger
     }}>
       {children}
     </PhoenixContext.Provider>
@@ -928,7 +1045,7 @@ const GoogleEcosystemView = () => {
     refreshStatus();
   }, []);
 
-  const refreshStatus = async () => {
+  const refreshStatus = async (): Promise<boolean> => {
     setLoading('status');
     try {
       const res = await runCommand('google status');
@@ -940,11 +1057,14 @@ const GoogleEcosystemView = () => {
         } else {
           setViewMode('dashboard');
         }
+        setLoading(null);
+        return !!parsed.data.connected;
       }
     } catch (e) {
       console.error("Status check failed", e);
     }
     setLoading(null);
+    return false;
   };
 
   const refreshData = async () => {
@@ -963,7 +1083,19 @@ const GoogleEcosystemView = () => {
     const res = await runCommand(`google auth ${action}`);
     const parsed = JSON.parse(res);
     setLastAction(parsed.message);
-    await refreshStatus();
+    if (action === 'start' && parsed.auth_url) {
+      try {
+        window.open(parsed.auth_url, '_blank', 'noopener,noreferrer');
+      } catch {}
+      // Poll for a short period so the UI flips to connected after the OAuth callback.
+      for (let i = 0; i < 15; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const connected = await refreshStatus();
+        if (connected) break;
+      }
+    } else {
+      await refreshStatus();
+    }
     if (action === 'logout') {
         setData({ gmail: [], drive: [], calendar: [] });
         setViewMode('dashboard');
@@ -1524,6 +1656,426 @@ const StudioView = () => {
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Memories & Context View ---
+
+const MemoriesView = () => {
+  const [q, setQ] = useState('');
+  const [limit, setLimit] = useState(50);
+  const [items, setItems] = useState<MemoryItem[]>([]);
+  const [count, setCount] = useState(0);
+  const [semanticMode, setSemanticMode] = useState(false);
+  const [vectorResults, setVectorResults] = useState<VectorMemoryResult[]>([]);
+  const [vectorCount, setVectorCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [formKey, setFormKey] = useState('');
+  const [formValue, setFormValue] = useState('');
+
+  const [vectorText, setVectorText] = useState('');
+  const [vectorMetadataRaw, setVectorMetadataRaw] = useState('{"emotion":"joy"}');
+  const [vectorSaving, setVectorSaving] = useState(false);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteCandidateKey, setDeleteCandidateKey] = useState<string | null>(null);
+
+  const load = async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (semanticMode) {
+        const res = await phoenixService.vectorSearch(q, limit, signal);
+        setVectorResults(res.results);
+        setVectorCount(res.count);
+      } else {
+        const res = await phoenixService.memorySearch(q, limit, signal);
+        setItems(res.items);
+        setCount(res.count);
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        setError(e?.message || 'Failed to load memories');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = window.setTimeout(() => {
+      load(controller.signal);
+    }, 200);
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, limit, semanticMode]);
+
+  const handleSave = async () => {
+    if (!formKey.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await phoenixService.memoryStore(formKey.trim(), formValue);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to store memory');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleVectorSave = async () => {
+    if (!vectorText.trim()) return;
+    setVectorSaving(true);
+    setError(null);
+    try {
+      let meta: any = {};
+      try {
+        meta = vectorMetadataRaw.trim() ? JSON.parse(vectorMetadataRaw) : {};
+      } catch {
+        throw new Error('Vector metadata must be valid JSON');
+      }
+      await phoenixService.vectorStore(vectorText.trim(), meta);
+      if (semanticMode) {
+        await load();
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to store vector memory');
+    } finally {
+      setVectorSaving(false);
+    }
+  };
+
+  const highlight = (text: string, needle: string) => {
+    const n = needle.trim();
+    if (!n) return <span>{text}</span>;
+    const idx = text.toLowerCase().indexOf(n.toLowerCase());
+    if (idx < 0) return <span>{text}</span>;
+    const before = text.slice(0, idx);
+    const mid = text.slice(idx, idx + n.length);
+    const after = text.slice(idx + n.length);
+    return (
+      <span>
+        {before}
+        <mark className="semantic-highlight">{mid}</mark>
+        {after}
+      </span>
+    );
+  };
+
+  const handleDelete = async (key: string) => {
+    setError(null);
+    try {
+      await phoenixService.memoryDelete(key);
+      if (formKey === key) {
+        setFormKey('');
+        setFormValue('');
+      }
+      await load();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete memory');
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-[#0f0b15] overflow-hidden">
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setDeleteCandidateKey(null);
+        }}
+        onConfirm={() => {
+          if (deleteCandidateKey) handleDelete(deleteCandidateKey);
+        }}
+        title="Delete memory?"
+        message={deleteCandidateKey ? `This will permanently delete the memory key: ${deleteCandidateKey}` : 'This will permanently delete the selected memory.'}
+      />
+
+      {/* Header */}
+      <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-void-800/80 backdrop-blur-md sticky top-0 z-30">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-phoenix-600 to-purple-600 flex items-center justify-center shadow-lg shadow-phoenix-600/20">
+            <Brain size={22} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">Eternal Memories — I Remember How You Felt</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 font-medium">
+                {loading
+                  ? 'Loading…'
+                  : semanticMode
+                    ? `${vectorCount} semantic matches • showing ${vectorResults.length}`
+                    : `${count} total • showing ${items.length}`}
+              </span>
+              {error && (
+                <span className="text-xs text-red-400 font-medium flex items-center gap-1">
+                  <AlertCircle size={12} /> {error}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSemanticMode((v) => !v)}
+            className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${semanticMode
+              ? 'bg-phoenix-600/20 border-phoenix-500/30 text-phoenix-200 shadow-[0_0_14px_rgba(236,72,153,0.18)]'
+              : 'bg-white/5 border-white/10 text-gray-200 hover:bg-white/10'}`}
+            title="Toggle semantic search"
+          >
+            {semanticMode ? 'Semantic Search ❤️' : 'Simple Search'}
+          </button>
+
+          {semanticMode && (
+            <button
+              onClick={() => setQ('moments when Dad was happy')}
+              className="px-3 py-2 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-300 border border-rose-500/20 hover:bg-rose-500/20 transition-all"
+              title="Recall Emotion"
+            >
+              Recall Emotion
+            </button>
+          )}
+
+          <button
+            onClick={() => load()}
+            className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+            title="Refresh"
+            disabled={loading}
+          >
+            <RefreshCcw size={18} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-8 max-w-7xl mx-auto w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Left: Search + List */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="glass-panel p-5 rounded-2xl">
+              <div className="flex flex-col md:flex-row gap-3 md:items-center">
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-400 uppercase font-bold mb-1">Search</label>
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    className="w-full bg-void-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500"
+                    placeholder={semanticMode ? 'Search by meaning (semantic)…' : 'Search memories (q)…'}
+                  />
+                </div>
+
+                <div className="w-full md:w-40">
+                  <label className="block text-xs text-gray-400 uppercase font-bold mb-1">Limit</label>
+                  <select
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value))}
+                    className="w-full bg-void-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500"
+                  >
+                    {[25, 50, 100, 200].map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+                <div className="text-sm font-bold text-white">Results</div>
+                <div className="text-xs text-gray-500 font-mono">{semanticMode ? 'GET /api/memory/vector/search' : 'GET /api/memory/search'}</div>
+              </div>
+
+              {loading && ((semanticMode && vectorResults.length === 0) || (!semanticMode && items.length === 0)) ? (
+                <div className="p-10 text-center text-gray-500 text-sm">Loading memories…</div>
+              ) : semanticMode ? (
+                vectorResults.length === 0 ? (
+                  <div className="p-10 text-center text-gray-500 text-sm">No semantic matches found.</div>
+                ) : (
+                  <div className="divide-y divide-white/5">
+                    {vectorResults.map((r) => {
+                      const emotion = (r.metadata && (r.metadata.emotion || r.metadata.primary_emotion)) ? String(r.metadata.emotion || r.metadata.primary_emotion) : '';
+                      const isEmotional = /love|joy|happy|sad|grief|miss|affection/i.test(`${emotion} ${r.text}`);
+                      return (
+                        <div key={r.id} className={`px-5 py-4 flex items-start gap-4 hover:bg-white/5 transition-colors ${isEmotional ? 'semantic-emotion-glow' : ''}`}>
+                          <div className="w-20 shrink-0 text-right">
+                            <div className="text-xs font-bold text-phoenix-300">{Math.round(r.score * 100)}%</div>
+                            <div className="text-[10px] text-gray-500">relevance</div>
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-xs text-gray-500 font-mono break-all">{r.id}</div>
+                            <div className="mt-1 text-sm text-white leading-relaxed">{highlight(r.text, q)}</div>
+                            {emotion && <div className="mt-2 text-[10px] text-rose-300/80">emotion: {emotion}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : items.length === 0 ? (
+                <div className="p-10 text-center text-gray-500 text-sm">No memories found.</div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {items.map((it) => (
+                    <div
+                      key={it.key}
+                      className={`px-5 py-4 flex items-start gap-4 hover:bg-white/5 transition-colors ${formKey === it.key ? 'bg-phoenix-600/10' : ''}`}
+                    >
+                      <button
+                        onClick={() => {
+                          setFormKey(it.key);
+                          setFormValue(it.value);
+                        }}
+                        className="flex-1 text-left"
+                        title="Click to edit"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-white break-all">{it.key}</span>
+                          {formKey === it.key && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-phoenix-500/10 border border-phoenix-500/20 text-phoenix-300">editing</span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500 whitespace-pre-wrap break-words max-h-16 overflow-hidden">
+                          {it.value}
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setDeleteCandidateKey(it.key);
+                          setIsDeleteModalOpen(true);
+                        }}
+                        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Add/Update */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="glass-panel p-6 rounded-2xl">
+              <div className="flex items-center justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-white font-bold">Add / Update Memory</h3>
+                  <p className="text-xs text-gray-500">POST /api/memory/store</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setFormKey('');
+                    setFormValue('');
+                  }}
+                  className="text-xs text-gray-400 hover:text-white"
+                  title="Clear form"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase font-bold mb-1">Key</label>
+                  <input
+                    value={formKey}
+                    onChange={(e) => setFormKey(e.target.value)}
+                    className="w-full bg-void-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500 font-mono"
+                    placeholder="e.g. user.preferred_name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase font-bold mb-1">Value</label>
+                  <textarea
+                    value={formValue}
+                    onChange={(e) => setFormValue(e.target.value)}
+                    className="w-full h-44 bg-void-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500 resize-none"
+                    placeholder="Stored context…"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !formKey.trim()}
+                    className="px-5 py-2 bg-phoenix-600 hover:bg-phoenix-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-phoenix-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+
+                  <button
+                    onClick={() => load()}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-200 rounded-lg text-sm font-medium border border-white/5 transition-colors"
+                    disabled={loading}
+                  >
+                    Reload
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel p-6 rounded-2xl">
+              <div className="flex items-center justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-white font-bold">Store Vector Memory</h3>
+                  <p className="text-xs text-gray-500">POST /api/memory/vector/store</p>
+                </div>
+                <div className="text-xs text-gray-500 font-mono">offline semantic index</div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase font-bold mb-1">Text</label>
+                  <textarea
+                    value={vectorText}
+                    onChange={(e) => setVectorText(e.target.value)}
+                    className="w-full h-28 bg-void-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500 resize-none"
+                    placeholder="A memory snippet (natural language)…"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase font-bold mb-1">Metadata (JSON)</label>
+                  <textarea
+                    value={vectorMetadataRaw}
+                    onChange={(e) => setVectorMetadataRaw(e.target.value)}
+                    className="w-full h-24 bg-void-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-phoenix-500 font-mono resize-none"
+                    placeholder='{"emotion":"joy","ts":"2025-01-01"}'
+                  />
+                </div>
+
+                <button
+                  onClick={handleVectorSave}
+                  disabled={vectorSaving || !vectorText.trim()}
+                  className="px-5 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-200 rounded-lg text-sm font-bold shadow-lg shadow-rose-600/10 border border-rose-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {vectorSaving ? 'Embedding…' : 'Store Semantic Memory'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-black/30 border border-white/10 rounded-xl p-4 text-xs text-gray-400">
+              <div className="flex items-center gap-2 text-gray-300 font-medium mb-1">
+                <Info size={14} className="text-phoenix-400" /> Notes
+              </div>
+              <div>
+                Simple Search queries the encrypted K/V vaults. Semantic Search uses vector embeddings for meaning-based recall.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2286,11 +2838,321 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, danger }: any) => (
   </button>
 );
 
+// --- EcoSystem View ---
+
+const EcoSystemView = () => {
+  const { runCommand } = useContext(PhoenixContext)!;
+  const [repos, setRepos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [importForm, setImportForm] = useState({ owner: '', repo: '', branch: '' });
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+
+  const PHOENIX_API_BASE = ((import.meta as any).env?.VITE_PHOENIX_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
+
+  const url = (path: string) => {
+    return PHOENIX_API_BASE ? `${PHOENIX_API_BASE}${path}` : path;
+  };
+
+  const loadRepos = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(url('/api/ecosystem/list'));
+      if (res.ok) {
+        const data = await res.json();
+        setRepos(data);
+      }
+    } catch (e) {
+      console.error('Failed to load repos', e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadRepos();
+  }, []);
+
+  const handleImport = async () => {
+    if (!importForm.owner || !importForm.repo) return;
+    setLoading(true);
+    try {
+      const res = await fetch(url('/api/ecosystem/import'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner: importForm.owner,
+          repo: importForm.repo,
+          branch: importForm.branch || undefined,
+        }),
+      });
+      if (res.ok) {
+        setImportForm({ owner: '', repo: '', branch: '' });
+        await loadRepos();
+      } else {
+        const error = await res.json();
+        alert(`Import failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      alert(`Import failed: ${e}`);
+    }
+    setLoading(false);
+  };
+
+  const handleBuild = async (repoId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(url(`/api/ecosystem/${repoId}/build`), { method: 'POST' });
+      if (res.ok) {
+        await loadRepos();
+      } else {
+        const error = await res.json();
+        alert(`Build failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      alert(`Build failed: ${e}`);
+    }
+    setLoading(false);
+  };
+
+  const handleStart = async (repoId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(url(`/api/ecosystem/${repoId}/start`), { method: 'POST' });
+      if (res.ok) {
+        await loadRepos();
+      } else {
+        const error = await res.json();
+        alert(`Start failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      alert(`Start failed: ${e}`);
+    }
+    setLoading(false);
+  };
+
+  const handleStop = async (repoId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(url(`/api/ecosystem/${repoId}/stop`), { method: 'POST' });
+      if (res.ok) {
+        await loadRepos();
+      } else {
+        const error = await res.json();
+        alert(`Stop failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      alert(`Stop failed: ${e}`);
+    }
+    setLoading(false);
+  };
+
+  const handleRemove = async (repoId: string) => {
+    if (!confirm('Are you sure you want to remove this repository?')) return;
+    setLoading(true);
+    try {
+      const res = await fetch(url(`/api/ecosystem/${repoId}`), { method: 'DELETE' });
+      if (res.ok) {
+        await loadRepos();
+      } else {
+        const error = await res.json();
+        alert(`Remove failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      alert(`Remove failed: ${e}`);
+    }
+    setLoading(false);
+  };
+
+  const getBuildSystemIcon = (system: string) => {
+    switch (system) {
+      case 'Cargo': return <Code size={16} className="text-orange-400" />;
+      case 'Npm': return <Package size={16} className="text-green-400" />;
+      case 'Pip': return <Code size={16} className="text-blue-400" />;
+      default: return <Wrench size={16} className="text-gray-400" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    if (status.includes('Running')) return 'text-green-400';
+    if (status.includes('Built')) return 'text-blue-400';
+    if (status.includes('Building')) return 'text-yellow-400';
+    if (status.includes('Failed')) return 'text-red-400';
+    return 'text-gray-400';
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-[#0f0b15] overflow-y-auto custom-scrollbar">
+      {/* Header */}
+      <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-void-800/80 backdrop-blur-md sticky top-0 z-30">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <GitBranch size={24} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">EcoSystem</h2>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs text-gray-400 font-medium">Active</span>
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={loadRepos}
+          className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+          title="Refresh"
+        >
+          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {/* Import Form */}
+      <div className="p-8 border-b border-white/5">
+        <div className="max-w-4xl mx-auto">
+          <h3 className="text-lg font-bold text-white mb-4">Import GitHub Repository</h3>
+          <div className="flex gap-3">
+            <input
+              type="text"
+              placeholder="Owner (e.g., facebook)"
+              value={importForm.owner}
+              onChange={(e) => setImportForm({ ...importForm, owner: e.target.value })}
+              className="flex-1 bg-void-800/50 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500/50 focus:bg-void-800 outline-none"
+            />
+            <input
+              type="text"
+              placeholder="Repository (e.g., react)"
+              value={importForm.repo}
+              onChange={(e) => setImportForm({ ...importForm, repo: e.target.value })}
+              className="flex-1 bg-void-800/50 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500/50 focus:bg-void-800 outline-none"
+            />
+            <input
+              type="text"
+              placeholder="Branch (optional)"
+              value={importForm.branch}
+              onChange={(e) => setImportForm({ ...importForm, branch: e.target.value })}
+              className="flex-1/3 bg-void-800/50 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500/50 focus:bg-void-800 outline-none"
+            />
+            <button
+              onClick={handleImport}
+              disabled={loading || !importForm.owner || !importForm.repo}
+              className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Plus size={18} /> Import
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Repo List */}
+      <div className="p-8 max-w-7xl mx-auto w-full">
+        {repos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="w-24 h-24 bg-void-800 rounded-full flex items-center justify-center mb-6">
+              <GitBranch size={48} className="text-gray-600" />
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-2">No Repositories</h3>
+            <p className="text-gray-400 max-w-md text-center mb-8">
+              Import a GitHub repository to get started. The system will automatically detect the build system and available commands.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {repos.map((repo: any) => (
+              <div
+                key={repo.id}
+                className="glass-panel rounded-2xl p-6 border border-white/5 hover:border-purple-500/30 transition-all"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      {getBuildSystemIcon(repo.build_system)}
+                      <h3 className="font-bold text-white">{repo.name}</h3>
+                    </div>
+                    <p className="text-xs text-gray-400">{repo.owner}/{repo.repo || repo.name}</p>
+                  </div>
+                  <button
+                    onClick={() => handleRemove(repo.id)}
+                    className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    title="Remove"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-3 mb-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Build System:</span>
+                    <span className="text-white font-medium">{repo.build_system}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Build Status:</span>
+                    <span className={getStatusColor(JSON.stringify(repo.build_status))}>
+                      {JSON.stringify(repo.build_status).replace(/"/g, '')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Service Status:</span>
+                    <span className={getStatusColor(JSON.stringify(repo.service_status))}>
+                      {JSON.stringify(repo.service_status).replace(/"/g, '')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => handleBuild(repo.id)}
+                    disabled={loading}
+                    className="flex-1 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-lg text-xs font-medium border border-blue-600/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Wrench size={14} /> Build
+                  </button>
+                  {JSON.stringify(repo.service_status).includes('Running') ? (
+                    <button
+                      onClick={() => handleStop(repo.id)}
+                      disabled={loading}
+                      className="flex-1 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 rounded-lg text-xs font-medium border border-red-600/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Square size={14} /> Stop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleStart(repo.id)}
+                      disabled={loading || !JSON.stringify(repo.build_status).includes('Built')}
+                      className="flex-1 py-2 bg-green-600/10 hover:bg-green-600/20 text-green-400 rounded-lg text-xs font-medium border border-green-600/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <PlayCircle size={14} /> Start
+                    </button>
+                  )}
+                </div>
+
+                {repo.commands && repo.commands.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/5">
+                    <p className="text-xs text-gray-500 mb-2">Available Commands:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {repo.commands.slice(0, 5).map((cmd: string, idx: number) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-1 bg-white/5 rounded text-xs text-gray-400 font-mono"
+                        >
+                          {cmd}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const DashboardLayout = () => {
-  const { clearHistory, relationalScore, sentiment, setRelationalScore, setSentiment, isConnected, phoenixName } = useContext(PhoenixContext)!;
-  const [activeView, setActiveView] = useState<'chat' | 'archetype' | 'settings' | 'memories' | 'orchestrator' | 'studio' | 'google' | 'devtools'>('chat');
+  const { clearHistory, relationalScore, sentiment, setRelationalScore, setSentiment, isConnected, phoenixName, setKeylogger, setMouseJigger } = useContext(PhoenixContext)!;
+  const [activeView, setActiveView] = useState<'chat' | 'archetype' | 'settings' | 'memories' | 'orchestrator' | 'studio' | 'google' | 'devtools' | 'ecosystem'>('chat');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+  const [uiSettings, setUiSettings] = useLocalStorageJsonState<UiSettings>('phoenix.ui.settings', DEFAULT_UI_SETTINGS);
 
   const handleNavigation = (view: typeof activeView) => {
     setActiveView(view);
@@ -2322,6 +3184,7 @@ const DashboardLayout = () => {
           <SidebarItem icon={Film} label="Studio & Recording" active={activeView === 'studio'} onClick={() => handleNavigation('studio')} />
           <SidebarItem icon={Network} label="Orchestrator" active={activeView === 'orchestrator'} onClick={() => handleNavigation('orchestrator')} />
           <SidebarItem icon={Cloud} label="Google Ecosystem" active={activeView === 'google'} onClick={() => handleNavigation('google')} />
+          <SidebarItem icon={GitBranch} label="EcoSystem" active={activeView === 'ecosystem'} onClick={() => handleNavigation('ecosystem')} />
           <SidebarItem icon={Heart} label="Archetype Matcher" active={activeView === 'archetype'} onClick={() => handleNavigation('archetype')} />
           <SidebarItem icon={Brain} label="Memories & Context" active={activeView === 'memories'} onClick={() => handleNavigation('memories')} />
         </div>
@@ -2347,23 +3210,118 @@ const DashboardLayout = () => {
           {activeView === 'orchestrator' && <OrchestratorView />}
           {activeView === 'studio' && <StudioView />}
           {activeView === 'google' && <GoogleEcosystemView />}
+          {activeView === 'ecosystem' && <EcoSystemView />}
           {activeView === 'devtools' && <DevToolsView />}
           {activeView === 'memories' && (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8">
-              <Brain size={64} className="text-gray-700 mb-4" />
-              <h3 className="text-xl font-bold text-gray-300">Memory Banks Locked</h3>
-              <p className="text-gray-500 max-w-md mt-2">Vector database not connected.</p>
-            </div>
+            <MemoriesView />
           )}
           {activeView === 'settings' && (
-             <div className="p-8 max-w-2xl mx-auto h-full flex flex-col">
-               <h2 className="text-2xl font-bold mb-6">System Configuration</h2>
+             <div className="p-8 max-w-3xl mx-auto h-full flex flex-col overflow-y-auto custom-scrollbar">
+                <h2 className="text-2xl font-bold mb-2 text-white">System Configuration</h2>
+                <p className="text-sm text-gray-500 mb-6">Local UI preferences and diagnostics.</p>
+
                <div className="glass-panel p-6 rounded-xl mb-6">
-                 <h3 className="text-lg font-medium mb-4">Relational Diagnostics</h3>
-                 <input type="range" min="0" max="100" value={relationalScore} onChange={(e) => setRelationalScore(Number(e.target.value))} className="w-full h-2 bg-void-700 rounded-lg accent-phoenix-500" />
+                 <h3 className="text-lg font-medium mb-1 text-white">Relational Diagnostics</h3>
+                 <p className="text-xs text-gray-500 mb-4">Tuning values used for UI animations and relationship indicators.</p>
+                 <input
+                   type="range"
+                   min="0"
+                   max="100"
+                   value={relationalScore}
+                   onChange={(e) => setRelationalScore(Number(e.target.value))}
+                   className="w-full h-2 bg-void-700 rounded-lg accent-phoenix-500"
+                 />
+                 <div className="flex justify-between text-[10px] text-gray-500 mt-2 font-mono">
+                   <span>0</span>
+                   <span>{relationalScore}</span>
+                   <span>100</span>
+                 </div>
+               </div>
+
+               <div className="glass-panel p-6 rounded-xl mb-6">
+                 <div className="flex items-start justify-between gap-6">
+                   <div>
+                     <h3 className="text-lg font-medium text-white mb-1">Input & Presence</h3>
+                     <p className="text-xs text-gray-500">
+                       Controls below are UI toggles only (persisted in your browser). No host-level input capture is performed by this
+                       frontend.
+                     </p>
+                   </div>
+                   <div className="text-[10px] text-gray-500 font-mono">stored: phoenix.ui.settings</div>
+                 </div>
+
+                 <div className="mt-5 space-y-5">
+                   {/* Keylogger */}
+                   <div className="flex items-center justify-between gap-4">
+                     <div>
+                       <div className="text-sm text-white font-medium flex items-center gap-2">
+                         <Keyboard size={16} className="text-phoenix-400" /> Keylogger
+                       </div>
+                       <div className="text-xs text-gray-500">Not implemented in the UI. Intended for a separate, consent-gated host service.</div>
+                     </div>
+                     <button
+                       onClick={() => {
+                         const newSettings = { ...uiSettings, keyloggerEnabled: !uiSettings.keyloggerEnabled };
+                         setUiSettings(newSettings);
+                         setKeylogger(newSettings.keyloggerEnabled, newSettings.keyloggerLogPath);
+                       }}
+                       className={`text-2xl ${uiSettings.keyloggerEnabled ? 'text-green-500' : 'text-gray-600'}`}
+                       title={uiSettings.keyloggerEnabled ? 'Enabled (UI preference)' : 'Disabled (UI preference)'}
+                     >
+                       {uiSettings.keyloggerEnabled ? <ToggleRight /> : <ToggleLeft />}
+                     </button>
+                   </div>
+
+                   <div className="pt-1">
+                     <label className="text-xs text-gray-500 block mb-1">Keylogger log path</label>
+                     <input
+                       type="text"
+                       value={uiSettings.keyloggerLogPath}
+                       onChange={(e) => setUiSettings(s => ({ ...s, keyloggerLogPath: e.target.value }))}
+                       className="w-full bg-void-900 border border-white/10 rounded px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500 font-mono"
+                       placeholder="logs/keylogger.log"
+                     />
+                     <div className="text-[10px] text-gray-500 mt-1">
+                       Target file location for logs (written by backend/host services). This frontend does not create the file.
+                     </div>
+                   </div>
+
+                   <div className="h-px bg-white/5" />
+
+                   {/* Mouse Jigger */}
+                   <div className="flex items-center justify-between gap-4">
+                     <div>
+                       <div className="text-sm text-white font-medium flex items-center gap-2">
+                         <MousePointer2 size={16} className="text-phoenix-400" /> Mouse Jigger
+                       </div>
+                       <div className="text-xs text-gray-500">Not implemented in the UI. Intended for a host service to prevent idle sleep.</div>
+                     </div>
+                     <button
+                       onClick={() => {
+                         const newSettings = { ...uiSettings, mouseJiggerEnabled: !uiSettings.mouseJiggerEnabled };
+                         setUiSettings(newSettings);
+                         setMouseJigger(newSettings.mouseJiggerEnabled);
+                       }}
+                       className={`text-2xl ${uiSettings.mouseJiggerEnabled ? 'text-green-500' : 'text-gray-600'}`}
+                       title={uiSettings.mouseJiggerEnabled ? 'Enabled (UI preference)' : 'Disabled (UI preference)'}
+                     >
+                       {uiSettings.mouseJiggerEnabled ? <ToggleRight /> : <ToggleLeft />}
+                     </button>
+                   </div>
+
+                   <div className="bg-black/30 border border-white/10 rounded-lg p-3 text-xs text-gray-400">
+                     <div className="flex items-center gap-2 text-gray-300 font-medium mb-1">
+                       <Info size={14} className="text-phoenix-400" /> Safety note
+                     </div>
+                     <div>
+                       These settings are placeholders for future, explicit-consent integrations. If you implement host-side components,
+                       ensure you include clear user consent, allow easy disable/uninstall, and avoid collecting sensitive input.
+                     </div>
+                   </div>
+                 </div>
                </div>
              </div>
-          )}
+           )}
         </div>
       </div>
     </div>

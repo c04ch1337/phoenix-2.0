@@ -55,4 +55,6 @@ members = [
     "config_manager",
     "github_archetype_sync",
     "code_analysis",
+    "vector_kb",
+    "ecosystem_manager",
 ]
