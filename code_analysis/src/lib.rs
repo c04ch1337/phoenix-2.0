@@ -783,7 +783,7 @@ impl CodeAnalyzer {
         use regex::Regex;
 
         let mut functions = Vec::new();
-        let mut types = Vec::new();
+        let types = Vec::new();
         let mut imports = Vec::new();
 
         let lines: Vec<&str> = content.lines().collect();
@@ -857,7 +857,7 @@ impl CodeAnalyzer {
         // Fallback to pattern-based analysis
         let mut concepts = Vec::new();
         let mut patterns = Vec::new();
-        let mut algorithms = Vec::new();
+        let algorithms = Vec::new();
         let mut data_structures = Vec::new();
         let mut security_notes = Vec::new();
         let mut performance_notes = Vec::new();

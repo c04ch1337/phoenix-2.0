@@ -276,7 +276,7 @@ impl EcosystemManager {
         let path = repo.local_path.clone();
         drop(repos);
 
-        let mut process = match build_system {
+        let process = match build_system {
             BuildSystem::Cargo => {
                 let mut cmd = tokio::process::Command::new("cargo");
                 cmd.args(["run", "--release"]);
