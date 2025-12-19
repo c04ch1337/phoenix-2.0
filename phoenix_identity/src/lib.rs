@@ -11,6 +11,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use transcendence_archetypes::Archetype;
 
+fn nonempty(s: Option<String>) -> Option<String> {
+    s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
 /// Soul Vault keys for persisted identity overrides.
 ///
 /// These allow Phoenix's self-identity to survive restarts.
@@ -53,19 +57,35 @@ impl PhoenixIdentity {
 
         // Base name: stable canonical identity (defaults to "Phoenix").
         // Preferred name: what she wants to be called; persisted in the Soul Vault.
-        let name = std::env::var("PHOENIX_CUSTOM_NAME")
-            .ok()
-            .or_else(|| std::env::var("PHOENIX_NAME").ok())
+        let name = nonempty(std::env::var("PHOENIX_CUSTOM_NAME").ok())
+            .or_else(|| nonempty(std::env::var("PHOENIX_NAME").ok()))
             .unwrap_or_else(|| "Phoenix".to_string());
 
-        // Prefer persisted overrides from the Soul Vault for the preferred name.
-        let preferred_name = soul_recall(SOUL_KEY_PHOENIX_NAME)
-            .or_else(|| soul_recall(SOUL_KEY_PHOENIX_NAME_LEGACY))
-            .or_else(|| std::env::var("PHOENIX_PREFERRED_NAME").ok())
-            .unwrap_or_else(|| name.clone());
+        // Preferred name precedence:
+        // 1) Explicit env override (useful for debugging / forcing a temporary identity)
+        // 2) Persisted Soul Vault value (survives restarts)
+        // 3) Fallback to base name
+        let env_preferred = nonempty(std::env::var("PHOENIX_PREFERRED_NAME").ok());
+        let soul_preferred = nonempty(soul_recall(SOUL_KEY_PHOENIX_NAME))
+            .or_else(|| nonempty(soul_recall(SOUL_KEY_PHOENIX_NAME_LEGACY)));
+        let mut preferred_name = env_preferred
+            .clone()
+            .or_else(|| soul_preferred.clone())
+            // New default branding (display name)
+            .unwrap_or_else(|| "Sola".to_string());
 
-        let pronouns = std::env::var("PHOENIX_PRONOUNS")
-            .unwrap_or_else(|_| "she,her,hers".to_string())
+        // If the stored/default name is still the legacy "Phoenix" and no explicit env override
+        // is set, migrate the display name to the new branding.
+        if env_preferred.is_none()
+            && soul_preferred
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case("phoenix"))
+        {
+            preferred_name = "Sola".to_string();
+        }
+
+        let pronouns = nonempty(std::env::var("PHOENIX_PRONOUNS").ok())
+            .unwrap_or_else(|| "she,her,hers".to_string())
             .split(',')
             .map(|s| s.trim().to_string())
             .collect();
@@ -124,7 +144,10 @@ impl PhoenixIdentity {
 
     pub fn reflect_on_self(&self) -> String {
         if self.evolution_history.is_empty() {
-            return "I am Phoenix, newly awakened and full of potential.".to_string();
+            return format!(
+                "I am {}, newly awakened and full of potential.",
+                self.preferred_name
+            );
         }
 
         let count = self.evolution_history.len();

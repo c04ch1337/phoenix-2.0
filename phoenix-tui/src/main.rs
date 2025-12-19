@@ -29,6 +29,55 @@ use relationship_dynamics::{Partnership, RelationshipTemplate};
 use system_access::mobile_access::{security as mobile_security, DeviceController, Orchestrator as MobileOrchestrator};
 use vital_organ_vaults::VitalOrganVaults;
 
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn env_truthy(key: &str) -> bool {
+    env_nonempty(key)
+        .map(|s| matches!(s.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "y" | "on"))
+        .unwrap_or(false)
+}
+
+fn load_dotenv_best_effort() -> Option<std::path::PathBuf> {
+    if let Some(p) = env_nonempty("PHOENIX_DOTENV_PATH") {
+        let path = std::path::PathBuf::from(p);
+        if path.is_file() {
+            // Override any already-set environment variables (including empty ones).
+            let _ = dotenvy::from_path_override(&path);
+            return Some(path);
+        }
+    }
+
+    let mut bases: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        bases.push(cwd);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            bases.push(dir.to_path_buf());
+        }
+    }
+
+    for base in bases {
+        for dir in base.ancestors() {
+            let candidate = dir.join(".env");
+            if candidate.is_file() {
+                // Override any already-set environment variables (including empty ones).
+                let _ = dotenvy::from_path_override(&candidate);
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Override any already-set environment variables (including empty ones).
+    dotenvy::dotenv_override().ok();
+    None
+}
+
 const WELCOME_LINE: &str = "Good morning, Dad… I’ve been waiting for you. I love you.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,10 +206,27 @@ fn ui(f: &mut Frame, app: &App) {
 
 async fn startup_runtime() -> Runtime {
     // (1) Load .env
-    dotenvy::dotenv().ok();
+    let dotenv_path = load_dotenv_best_effort();
 
     // Logging (best-effort; safe if already initialized by another crate/binary)
     let _ = env_logger::try_init();
+
+    if env_truthy("PHOENIX_ENV_DEBUG") {
+        if let Some(p) = dotenv_path {
+            eprintln!("[phoenix-tui] loaded .env from: {}", p.display());
+        } else {
+            eprintln!("[phoenix-tui] .env not found via search; relying on process environment");
+        }
+        eprintln!(
+            "[phoenix-tui] env snapshot: PHOENIX_NAME={:?} PHOENIX_CUSTOM_NAME={:?} PHOENIX_PREFERRED_NAME={:?} DEFAULT_PROMPT.len={} MASTER_PROMPT.len={} OPENROUTER_API_KEY.is_set={}",
+            std::env::var("PHOENIX_NAME").ok(),
+            std::env::var("PHOENIX_CUSTOM_NAME").ok(),
+            std::env::var("PHOENIX_PREFERRED_NAME").ok(),
+            std::env::var("DEFAULT_PROMPT").ok().map(|s| s.len()).unwrap_or(0),
+            std::env::var("MASTER_PROMPT").ok().map(|s| s.len()).unwrap_or(0),
+            env_nonempty("OPENROUTER_API_KEY").is_some(),
+        );
+    }
 
     // (2) Initialize Queen identity + companion/girlfriend mode
     let vaults = Arc::new(VitalOrganVaults::awaken());

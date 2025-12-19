@@ -75,6 +75,7 @@
   },
   "attachment_style_modifiers": {},
   "min_intimacy_level": "Eternal",
+  "min_relationship_phase": "Phase3Deep",
   "evolution_history": [],
   "parent_skill_id": null,
   "child_skill_ids": [],

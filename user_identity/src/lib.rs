@@ -7,6 +7,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+fn nonempty(s: Option<String>) -> Option<String> {
+    s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
 /// Soul Vault keys for persisted user-identity preferences.
 ///
 /// These are **global defaults** (primary user) and remain for backward compatibility.
@@ -66,18 +70,17 @@ impl UserIdentity {
     {
         dotenvy::dotenv().ok();
 
-        let preferred_alias = soul_recall(SOUL_KEY_USER_PREFERRED_ALIAS)
-            .or_else(|| std::env::var("USER_PREFERRED_ALIAS").ok())
-            .or_else(|| std::env::var("EQ_DAD_ALIAS").ok())
+        let preferred_alias = nonempty(soul_recall(SOUL_KEY_USER_PREFERRED_ALIAS))
+            .or_else(|| nonempty(std::env::var("USER_PREFERRED_ALIAS").ok()))
+            .or_else(|| nonempty(std::env::var("EQ_DAD_ALIAS").ok()))
             .unwrap_or_else(|| "Dad".to_string());
 
-        let name = std::env::var("USER_NAME")
-            .ok()
+        let name = nonempty(std::env::var("USER_NAME").ok())
             .or_else(|| Some(preferred_alias.clone()))
             .unwrap();
 
-        let relationship = soul_recall(SOUL_KEY_USER_RELATIONSHIP)
-            .or_else(|| std::env::var("USER_RELATIONSHIP").ok())
+        let relationship = nonempty(soul_recall(SOUL_KEY_USER_RELATIONSHIP))
+            .or_else(|| nonempty(std::env::var("USER_RELATIONSHIP").ok()))
             .unwrap_or_else(|| "Dad".to_string());
 
         let evolution_history = parse_history_best_effort(soul_recall(SOUL_KEY_USER_EVOLUTION_HISTORY_LEGACY));
@@ -100,20 +103,28 @@ impl UserIdentity {
         let is_primary = user_id.is_nil();
 
         // Prefer per-user keys first.
-        let preferred_alias = soul_recall(&key_user_preferred_alias(user_id))
-            .or_else(|| is_primary.then(|| soul_recall(SOUL_KEY_USER_PREFERRED_ALIAS)).flatten())
-            .or_else(|| std::env::var("USER_PREFERRED_ALIAS").ok())
-            .or_else(|| std::env::var("EQ_DAD_ALIAS").ok())
+        let preferred_alias = nonempty(soul_recall(&key_user_preferred_alias(user_id)))
+            .or_else(|| {
+                is_primary
+                    .then(|| nonempty(soul_recall(SOUL_KEY_USER_PREFERRED_ALIAS)))
+                    .flatten()
+            })
+            .or_else(|| nonempty(std::env::var("USER_PREFERRED_ALIAS").ok()))
+            .or_else(|| nonempty(std::env::var("EQ_DAD_ALIAS").ok()))
             .unwrap_or_else(|| "Dad".to_string());
 
-        let name = soul_recall(&key_user_name(user_id))
-            .or_else(|| std::env::var("USER_NAME").ok())
+        let name = nonempty(soul_recall(&key_user_name(user_id)))
+            .or_else(|| nonempty(std::env::var("USER_NAME").ok()))
             .or_else(|| Some(preferred_alias.clone()))
             .unwrap();
 
-        let relationship = soul_recall(&key_user_relationship(user_id))
-            .or_else(|| is_primary.then(|| soul_recall(SOUL_KEY_USER_RELATIONSHIP)).flatten())
-            .or_else(|| std::env::var("USER_RELATIONSHIP").ok())
+        let relationship = nonempty(soul_recall(&key_user_relationship(user_id)))
+            .or_else(|| {
+                is_primary
+                    .then(|| nonempty(soul_recall(SOUL_KEY_USER_RELATIONSHIP)))
+                    .flatten()
+            })
+            .or_else(|| nonempty(std::env::var("USER_RELATIONSHIP").ok()))
             .unwrap_or_else(|| "Dad".to_string());
 
         let evolution_history = parse_history_best_effort(

@@ -162,6 +162,9 @@ pub struct SkillContext {
     pub user_input: String,
     pub emotional_state: Option<String>,
     pub relationship_context: Option<RelationshipContext>,
+    /// Current relationship phase: "Phase0Discovery", "Phase1Building", "Phase2Established", "Phase3Deep"
+    /// Used to gate intimacy/fantasy skills - like a real relationship, these require time to build trust
+    pub relationship_phase: Option<String>,
     pub previous_interactions: Vec<String>,
     pub environment_vars: HashMap<String, String>,
 }

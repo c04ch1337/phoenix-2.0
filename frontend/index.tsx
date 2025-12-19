@@ -210,6 +210,12 @@ interface VectorMemoryAllResponse {
   count: number;
 }
 
+interface BackendConfig {
+  openrouter_api_key_set: boolean;
+  user_name: string | null;
+  user_preferred_alias: string | null;
+}
+
 const DEFAULT_UI_SETTINGS: UiSettings = {
   keyloggerEnabled: false,
   keyloggerLogPath: 'logs/keylogger.log',
@@ -372,7 +378,7 @@ class PhoenixBackendService {
     {
       id: 'init-1',
       role: 'assistant',
-      content: "Phoenix Core 2.0 initialized. If the backend is running, I can talk through Phoenix's real voice now.",
+      content: "Sola - powered by Phoenix AGI initialized. If the backend is running, I can talk through Sola's real voice now.",
       timestamp: Date.now()
     }
   ];
@@ -489,6 +495,44 @@ class PhoenixBackendService {
     }
   }
 
+  async getConfig(signal?: AbortSignal): Promise<BackendConfig> {
+    const res = await fetch(this.url('/api/config'), { signal });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`config ${res.status}${t ? `: ${t}` : ''}`);
+    }
+    const j = await res.json();
+    return {
+      openrouter_api_key_set: !!j.openrouter_api_key_set,
+      user_name: typeof j.user_name === 'string' ? j.user_name : null,
+      user_preferred_alias: typeof j.user_preferred_alias === 'string' ? j.user_preferred_alias : null,
+    };
+  }
+
+  async setConfig(update: { openrouter_api_key?: string; user_name?: string; user_preferred_alias?: string }): Promise<BackendConfig & { llm_status: string }> {
+    const res = await fetch(this.url('/api/config'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    const t = await res.text().catch(() => '');
+    if (!res.ok) {
+      try {
+        const j = JSON.parse(t);
+        throw new Error(j?.message || `config set ${res.status}`);
+      } catch {
+        throw new Error(`config set ${res.status}${t ? `: ${t}` : ''}`);
+      }
+    }
+    const j = JSON.parse(t);
+    return {
+      openrouter_api_key_set: !!j.openrouter_api_key_set,
+      user_name: typeof j.user_name === 'string' ? j.user_name : null,
+      user_preferred_alias: typeof j.user_preferred_alias === 'string' ? j.user_preferred_alias : null,
+      llm_status: typeof j.llm_status === 'string' ? j.llm_status : 'unknown',
+    };
+  }
+
   async sendCommand(command: string): Promise<string> {
     try {
       const res = await fetch(this.url('/api/command'), {
@@ -512,9 +556,9 @@ class PhoenixBackendService {
       const res = await fetch(this.url('/api/name'));
       if (!res.ok) throw new Error(`name ${res.status}`);
       const j = await res.json();
-      return j.name || 'Phoenix';
+      return j.name || 'Sola';
     } catch {
-      return 'Phoenix';
+      return 'Sola';
     }
   }
 
@@ -589,7 +633,7 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [currentArchetype, setCurrentArchetype] = useState<Archetype | null>(null);
   const [relationalScore, setRelationalScore] = useState(50);
   const [sentiment, setSentiment] = useState<'positive' | 'negative' | 'neutral'>('neutral');
-  const [phoenixName, setPhoenixName] = useState("Phoenix");
+  const [phoenixName, setPhoenixName] = useState("Sola");
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -628,6 +672,10 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
         if (json.message) displayContent = json.message;
         else if (json.data) displayContent = "Received structured data from backend.";
       } catch (e) {}
+
+      // Normalize legacy speaker tags that some prompts/models return.
+      // We keep the tag (for users who like it) but ensure it never says "Phoenix:".
+      displayContent = displayContent.replace(/^(phoenix|pheonix)\s*:\s*/i, 'Sola: ');
       
       const aiMsg: Message = { id: `ai-${Date.now()}`, role: 'assistant', content: displayContent, timestamp: Date.now() };
       phoenixService.getHistory().push(aiMsg);
@@ -826,6 +874,171 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }: { isO
           >
             <Trash2 size={14} /> Confirm
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Backend Config Settings (API keys + user naming) ---
+
+const BackendConfigSettings: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const [apiKeySet, setApiKeySet] = useState(false);
+  const [openrouterKey, setOpenrouterKey] = useState('');
+
+  const [userName, setUserName] = useState('');
+  const [preferredAlias, setPreferredAlias] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const cfg = await phoenixService.getConfig();
+      setApiKeySet(cfg.openrouter_api_key_set);
+      setUserName(cfg.user_name ?? '');
+      setPreferredAlias(cfg.user_preferred_alias ?? '');
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    setOk(null);
+    try {
+      const update: any = {};
+      if (openrouterKey.trim()) update.openrouter_api_key = openrouterKey.trim();
+      // Always allow setting names (empty clears).
+      update.user_name = userName;
+      update.user_preferred_alias = preferredAlias;
+
+      const out = await phoenixService.setConfig(update);
+      setApiKeySet(out.openrouter_api_key_set);
+      setOpenrouterKey('');
+      setOk(`Saved. LLM: ${out.llm_status}`);
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearApiKey = async () => {
+    setSaving(true);
+    setErr(null);
+    setOk(null);
+    try {
+      const out = await phoenixService.setConfig({ openrouter_api_key: '' });
+      setApiKeySet(out.openrouter_api_key_set);
+      setOpenrouterKey('');
+      setOk('API key cleared.');
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="glass-panel p-6 rounded-xl mb-6">
+      <div className="flex items-start justify-between gap-6">
+        <div>
+          <h3 className="text-lg font-medium text-white mb-1 flex items-center gap-2">
+            <Lock size={16} className="text-phoenix-400" /> API Key & Identity
+          </h3>
+          <p className="text-xs text-gray-500">
+            Configure local Phoenix AGI settings. Values are stored in <span className="font-mono">.env</span> on this machine and never sent anywhere except
+            your selected provider.
+          </p>
+        </div>
+        <div className="text-right">
+          <div className={`text-xs font-bold ${apiKeySet ? 'text-green-400' : 'text-yellow-400'}`}>
+            OpenRouter Key: {apiKeySet ? 'SET' : 'MISSING'}
+          </div>
+          <button
+            onClick={load}
+            className="mt-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-200 rounded-lg border border-white/10 text-xs"
+            disabled={loading || saving}
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-5">
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">OpenRouter API Key</label>
+          <input
+            type="password"
+            value={openrouterKey}
+            onChange={(e) => setOpenrouterKey(e.target.value)}
+            className="w-full bg-void-900 border border-white/10 rounded px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500 font-mono"
+            placeholder={apiKeySet ? '•••••••• (leave blank to keep current)' : 'sk-or-v1-...'}
+            autoComplete="off"
+          />
+          <div className="flex items-center justify-between mt-2">
+            <div className="text-[10px] text-gray-500">
+              Required for real chat responses. Leave blank to keep the existing key.
+            </div>
+            <button
+              onClick={clearApiKey}
+              className="text-[11px] text-red-400 hover:text-red-300"
+              disabled={saving}
+              title="Remove OPENROUTER_API_KEY"
+            >
+              Clear key
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Your name (USER_NAME)</label>
+            <input
+              type="text"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              className="w-full bg-void-900 border border-white/10 rounded px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500"
+              placeholder="e.g. James"
+            />
+            <div className="text-[10px] text-gray-500 mt-1">Used as the primary address name in relational context.</div>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">What Sola calls you (USER_PREFERRED_ALIAS)</label>
+            <input
+              type="text"
+              value={preferredAlias}
+              onChange={(e) => setPreferredAlias(e.target.value)}
+              className="w-full bg-void-900 border border-white/10 rounded px-3 py-2 text-sm text-white outline-none focus:border-phoenix-500"
+              placeholder="e.g. Dad"
+            />
+            <div className="text-[10px] text-gray-500 mt-1">Fallback if USER_NAME is not set; also used by legacy flows.</div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={save}
+            className="px-5 py-2 bg-phoenix-600 hover:bg-phoenix-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-phoenix-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save Settings'}
+          </button>
+          {ok && <div className="text-xs text-green-400 font-mono">{ok}</div>}
+          {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
         </div>
       </div>
     </div>
@@ -1289,7 +1502,7 @@ const GoogleEcosystemView = () => {
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">Service Disconnected</h3>
             <p className="text-gray-400 max-w-md text-center mb-8">
-              Connect your Google Workspace account to enable email, drive, and calendar orchestration directly from the Phoenix dashboard.
+              Connect your Google Workspace account to enable email, drive, and calendar orchestration directly from the Phoenix AGI dashboard.
             </p>
             <button onClick={() => handleAuth('start')} className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-xl shadow-xl shadow-blue-500/20 font-bold transition-all transform hover:-translate-y-1 flex items-center gap-3">
               <Globe size={20} /> Connect Google Account
@@ -2082,7 +2295,7 @@ const MemoriesView = () => {
 
 // --- Chat View ---
 
-const ChatView = () => {
+const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
   const { messages, sendMessage, currentArchetype, isConnected, clearHistory, deleteMessage, relationalScore, phoenixName } = useContext(PhoenixContext)!;
   const [input, setInput] = useState('');
   const [showContext, setShowContext] = useState(false);
@@ -2211,6 +2424,13 @@ const ChatView = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => onOpenSettings?.()}
+              className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              title="Settings"
+            >
+              <Settings size={18} />
+            </button>
             <button 
               onClick={() => setShowContext(!showContext)} 
               className={`p-2 rounded-lg transition-all duration-200 border border-transparent ${showContext ? 'bg-phoenix-500 text-white shadow-lg shadow-phoenix-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5 hover:border-white/10'}`} 
@@ -3203,7 +3423,7 @@ const DashboardLayout = () => {
         </div>
 
         <div className="flex-1 overflow-hidden relative bg-gradient-to-b from-[#0f0b15] to-[#130f1c]">
-          {activeView === 'chat' && <ChatView />}
+          {activeView === 'chat' && <ChatView onOpenSettings={() => handleNavigation('settings')} />}
           {activeView === 'archetype' && <DatingProfileMatcher />}
           {activeView === 'orchestrator' && <OrchestratorView />}
           {activeView === 'studio' && <StudioView />}
@@ -3214,9 +3434,11 @@ const DashboardLayout = () => {
             <MemoriesView />
           )}
           {activeView === 'settings' && (
-             <div className="p-8 max-w-3xl mx-auto h-full flex flex-col overflow-y-auto custom-scrollbar">
-                <h2 className="text-2xl font-bold mb-2 text-white">System Configuration</h2>
-                <p className="text-sm text-gray-500 mb-6">Local UI preferences and diagnostics.</p>
+              <div className="p-8 max-w-3xl mx-auto h-full flex flex-col overflow-y-auto custom-scrollbar">
+                 <h2 className="text-2xl font-bold mb-2 text-white">System Configuration</h2>
+                 <p className="text-sm text-gray-500 mb-6">Local UI preferences and diagnostics.</p>
+
+                 <BackendConfigSettings />
 
                <div className="glass-panel p-6 rounded-xl mb-6">
                  <h3 className="text-lg font-medium mb-1 text-white">Relational Diagnostics</h3>
@@ -3318,8 +3540,8 @@ const DashboardLayout = () => {
                    </div>
                  </div>
                </div>
-             </div>
-           )}
+              </div>
+            )}
         </div>
       </div>
     </div>

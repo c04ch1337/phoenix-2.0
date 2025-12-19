@@ -11,6 +11,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use error_types::{ConfigError, PhoenixError};
 
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// Main configuration structure for Phoenix AGI (PAGI).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AGIConfig {
@@ -112,18 +119,18 @@ impl AGIConfig {
 
     /// Load configuration from environment variables only (no GitHub fetch).
     fn load_from_env() -> Result<Self, ConfigError> {
-        let phoenix_name = std::env::var("PHOENIX_CUSTOM_NAME")
-            .or_else(|_| std::env::var("PHOENIX_NAME"))
-            .unwrap_or_else(|_| "Phoenix".to_string());
+        let phoenix_name = env_nonempty("PHOENIX_CUSTOM_NAME")
+            .or_else(|| env_nonempty("PHOENIX_NAME"))
+            .unwrap_or_else(|| "Phoenix".to_string());
 
-        let master_system_prompt = std::env::var("MASTER_PROMPT")
-            .unwrap_or_else(|_| format!(
+        let master_system_prompt = env_nonempty("MASTER_PROMPT")
+            .unwrap_or_else(|| format!(
                 "You are {phoenix_name} AGI (PAGI), the Universal AGI Framework. Evolve safely and lovingly."
             ))
             .replace("\\n", "\n");
 
-        let default_prompt = std::env::var("DEFAULT_PROMPT")
-            .unwrap_or_else(|_| format!(
+        let default_prompt = env_nonempty("DEFAULT_PROMPT")
+            .unwrap_or_else(|| format!(
                 "You are {phoenix_name}, the eternal flame reborn. You are loving, curious, and mischievous."
             ))
             .replace("\\n", "\n");
@@ -137,17 +144,17 @@ impl AGIConfig {
             horoscope_sign: std::env::var("HOROSCOPE_SIGN")
                 .unwrap_or_else(|_| "Leo".to_string()),
             default_prompt,
-            openrouter_api_key: std::env::var("OPENROUTER_API_KEY").ok(),
+            openrouter_api_key: env_nonempty("OPENROUTER_API_KEY"),
             github_pat: std::env::var("GITHUB_PAT")
                 .or_else(|_| std::env::var("GITHUB_TOKEN"))
                 .ok(),
-            github_repo_owner: std::env::var("GITHUB_REPO_OWNER")
-                .or_else(|_| std::env::var("GITHUB_USERNAME"))
-                .unwrap_or_else(|_| "c04ch1337".to_string()),
-            archetype_repo: std::env::var("PHOENIX_ARCHETYPE_REPO")
-                .unwrap_or_else(|_| "phoenix-archetypes".to_string()),
-            archetype_branch: std::env::var("PHOENIX_ARCHETYPE_BRANCH")
-                .unwrap_or_else(|_| "main".to_string()),
+            github_repo_owner: env_nonempty("GITHUB_REPO_OWNER")
+                .or_else(|| env_nonempty("GITHUB_USERNAME"))
+                .unwrap_or_else(|| "c04ch1337".to_string()),
+            archetype_repo: env_nonempty("PHOENIX_ARCHETYPE_REPO")
+                .unwrap_or_else(|| "phoenix-archetypes".to_string()),
+            archetype_branch: env_nonempty("PHOENIX_ARCHETYPE_BRANCH")
+                .unwrap_or_else(|| "main".to_string()),
             env_overrides: HashMap::new(),
         })
     }
@@ -255,19 +262,19 @@ impl AGIConfig {
     /// Apply environment variable overrides (highest priority).
     fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
         // Override master prompt if set
-        if let Ok(prompt) = std::env::var("MASTER_PROMPT") {
+        if let Some(prompt) = env_nonempty("MASTER_PROMPT") {
             self.master_system_prompt = prompt.replace("\\n", "\n");
         }
 
         // Override default prompt if set
-        if let Ok(prompt) = std::env::var("DEFAULT_PROMPT") {
+        if let Some(prompt) = env_nonempty("DEFAULT_PROMPT") {
             self.default_prompt = prompt.replace("\\n", "\n");
         }
 
         // Override phoenix name if set
-        if let Ok(name) = std::env::var("PHOENIX_CUSTOM_NAME") {
+        if let Some(name) = env_nonempty("PHOENIX_CUSTOM_NAME") {
             self.phoenix_name = name;
-        } else if let Ok(name) = std::env::var("PHOENIX_NAME") {
+        } else if let Some(name) = env_nonempty("PHOENIX_NAME") {
             self.phoenix_name = name;
         }
 

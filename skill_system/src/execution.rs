@@ -17,6 +17,26 @@ impl SkillExecutionEngine {
     /// - tool calls
     /// - ORCH delegation
     pub async fn execute(&mut self, skill: &SkillDefinition, ctx: SkillContext) -> Result<SkillResult, String> {
+        // Check relationship phase requirement
+        if let Some(min_phase) = &skill.min_relationship_phase {
+            if let Some(current_phase) = &ctx.relationship_phase {
+                if !meets_phase_requirement(current_phase, min_phase) {
+                    return Err(format!(
+                        "This skill requires relationship phase '{}' or higher, but current phase is '{}'. \
+                        Like a real relationship, intimacy and fantasy require time to build trust and connection. \
+                        Please continue building the relationship through Phase 0 (Discovery) and Phase 1 (Building) first.",
+                        min_phase, current_phase
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "This skill requires relationship phase '{}', but no relationship phase information is available. \
+                    Please ensure the relationship system is properly initialized.",
+                    min_phase
+                ));
+            }
+        }
+        
         let mut out = String::new();
         out.push_str(&format!("SKILL: {}\n\n", skill.name));
 
@@ -57,5 +77,21 @@ impl SkillExecutionEngine {
             learned_variations: vec![],
         })
     }
+}
+
+/// Check if current phase meets minimum phase requirement
+/// Phase order: Phase0Discovery < Phase1Building < Phase2Established < Phase3Deep
+fn meets_phase_requirement(current_phase: &str, min_phase: &str) -> bool {
+    let phase_order = [
+        "Phase0Discovery",
+        "Phase1Building", 
+        "Phase2Established",
+        "Phase3Deep"
+    ];
+    
+    let current_idx = phase_order.iter().position(|&p| p == current_phase).unwrap_or(0);
+    let min_idx = phase_order.iter().position(|&p| p == min_phase).unwrap_or(0);
+    
+    current_idx >= min_idx
 }
 

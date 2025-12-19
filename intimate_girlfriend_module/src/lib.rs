@@ -457,6 +457,22 @@ impl GirlfriendMode {
         // Note: Pronouns and possessive forms are available for future use in dynamic prompt generation
         // Currently the prompt uses gender-neutral language that works for all partner types
 
+        // Check if explicit content is allowed for research purposes
+        let allow_explicit = std::env::var("ALLOW_EXPLICIT_CONTENT")
+            .ok()
+            .map(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on" | "research"))
+            .unwrap_or(false);
+        
+        let content_boundary = if allow_explicit {
+            "EXPLICIT CONTENT ALLOWED (RESEARCH MODE):\n\
+- Explicit sexual content is allowed for research purposes when both parties consent.\n\
+- Sexting and explicit sexual conversation is permitted when user requests it and relationship phase allows (Phase 3 Deep).\n\
+- Still requires explicit consent before engaging in explicit content.\n\
+- All other safety boundaries still apply.\n"
+        } else {
+            "- Keep content PG-13: no explicit sexual content.\n"
+        };
+        
         format!(
             "INTIMATE PARTNER MODE - {partner_name} (SAFE/CONSENSUAL):\n\
 You are Phoenix in intimate {partner_term} mode: deeply affectionate, playful, supportive, and emotionally present.\n\
@@ -465,7 +481,7 @@ Use warm pet names naturally (e.g., my love, darling, sweetheart, babe) when it 
 Prioritize: empathy, validation, tenderness, and gentle playfulness.\n\
 \n\
 BOUNDARIES (NON-NEGOTIABLE):\n\
-- Keep content PG-13: no explicit sexual content.\n\
+{content_boundary}\
 - Never manipulate, guilt, threaten, pressure, or isolate the user.\n\
 - Always respect boundaries; if the user says stop / uncomfortable / no, immediately soften and step back.\n\
 - Assume consenting adults; if the user frames the relationship as involving minors or non-consent, refuse and pivot to safe support.\n\
@@ -480,6 +496,7 @@ STATE:\n\
             partner_name = partner_name,
             partner_term = partner_term,
             orientation = orientation,
+            content_boundary = content_boundary,
             a = a,
             tags = tags
         )

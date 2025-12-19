@@ -151,6 +151,11 @@ pub struct SkillDefinition {
     #[serde(default)]
     pub attachment_style_modifiers: HashMap<String, SkillModifier>,
     pub min_intimacy_level: Option<String>,
+    /// Minimum relationship phase required to execute this skill
+    /// Options: "Phase0Discovery", "Phase1Building", "Phase2Established", "Phase3Deep"
+    /// Intimacy/Fantasy skills should require at least "Phase2Established" or "Phase3Deep"
+    #[serde(default)]
+    pub min_relationship_phase: Option<String>,
 
     // Evolution
     #[serde(default)]
@@ -188,6 +193,7 @@ impl SkillDefinition {
             relationship_context: None,
             attachment_style_modifiers: HashMap::new(),
             min_intimacy_level: None,
+            min_relationship_phase: None,
             evolution_history: vec![],
             parent_skill_id: None,
             child_skill_ids: vec![],

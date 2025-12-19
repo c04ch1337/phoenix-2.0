@@ -71,6 +71,7 @@
   },
   "attachment_style_modifiers": {},
   "min_intimacy_level": "Deep",
+  "min_relationship_phase": "Phase2Established",
   "evolution_history": [],
   "parent_skill_id": null,
   "child_skill_ids": [],

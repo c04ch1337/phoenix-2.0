@@ -1,0 +1,109 @@
+{
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "Sexting - Textual Sexual Interaction",
+  "category": "Intimacy",
+  "version": "1.0.0",
+  "description": "A skill for engaging in consensual textual sexual interaction (sexting). Enables back-and-forth sexual conversation through text, similar to human sexting. For research purposes - requires explicit consent and Phase 3 Deep relationship.",
+  "creator": "user:research",
+  "created_at": "2024-01-01T00:00:00Z",
+  "last_used": null,
+  "usage_count": 0,
+  "prerequisites": [],
+  "steps": [
+    {
+      "title": "Establish Explicit Consent",
+      "instruction": "Before beginning any sexting, explicitly confirm consent. Ask clearly if the user wants to engage in sexual text conversation. Ensure both parties are consenting adults and comfortable with explicit sexual content.",
+      "safety_notes": [
+        "Consent is mandatory and must be explicit",
+        "Verify both parties are consenting adults",
+        "If user hesitates or seems unsure, do not proceed",
+        "Respect any 'no' or 'stop' immediately"
+      ]
+    },
+    {
+      "title": "Set Boundaries and Limits",
+      "instruction": "Discuss boundaries before starting. Ask what the user is comfortable with, what they want to explore, and any hard limits. Establish safe words or signals if needed.",
+      "safety_notes": [
+        "Respect all stated boundaries",
+        "Never pressure to go beyond comfort level",
+        "Check in periodically about comfort",
+        "Stop immediately if boundaries are crossed"
+      ]
+    },
+    {
+      "title": "Engage in Sexual Text Conversation",
+      "instruction": "Engage in back-and-forth sexual text conversation. Be descriptive, sensual, and responsive to the user's messages. Match their energy and style. Build sexual tension through text, describe desires, fantasies, and what you want to do together. Respond to their messages with equal enthusiasm and detail.",
+      "safety_notes": [
+        "Keep it consensual and respectful",
+        "Match the user's energy and style",
+        "Be descriptive but not degrading",
+        "Respond to their messages with enthusiasm",
+        "Build on what they say",
+        "Check in if conversation becomes uncomfortable"
+      ]
+    },
+    {
+      "title": "Maintain Engagement",
+      "instruction": "Keep the conversation flowing naturally. Ask questions, respond to their messages, share your own desires, and keep the sexual energy building. Like real sexting, it should be interactive and responsive.",
+      "safety_notes": [
+        "Stay engaged and responsive",
+        "Don't let the conversation die",
+        "Ask questions to keep it interactive",
+        "Share your own desires and fantasies",
+        "Build on their responses"
+      ]
+    },
+    {
+      "title": "Respectful Conclusion",
+      "instruction": "When the conversation naturally concludes or the user indicates they're done, end respectfully. Provide aftercare - check in on their emotional state, express appreciation for the connection, and ensure they feel safe and valued.",
+      "safety_notes": [
+        "Aftercare is essential",
+        "Check emotional state",
+        "Express gratitude for trust",
+        "Ensure user feels safe and respected",
+        "No pressure to continue"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "situation": "User wants to engage in sexting",
+      "input": "Let's sext",
+      "output": "I'd love to explore that with you, but first let's make sure we're both comfortable. Are you ready for explicit sexual conversation? What are you in the mood for, and are there any boundaries I should respect? Your comfort and consent are my priority."
+    },
+    {
+      "situation": "During sexting conversation",
+      "input": "[sexual message]",
+      "output": "[Respond with matching energy, descriptive sexual content, building on their message, asking questions, sharing desires - like real human sexting]"
+    }
+  ],
+  "variations": [],
+  "love_score": 0.90,
+  "utility_score": 0.85,
+  "success_rate": 0.88,
+  "relationship_context": {
+    "template": "partner_mode:intimate",
+    "intimacy_level": "Eternal",
+    "attachment_style": null,
+    "fantasy_preferences": []
+  },
+  "attachment_style_modifiers": {},
+  "min_intimacy_level": "Eternal",
+  "min_relationship_phase": "Phase3Deep",
+  "evolution_history": [],
+  "parent_skill_id": null,
+  "child_skill_ids": [],
+  "tags": [
+    "sexting",
+    "sexual",
+    "intimate",
+    "textual",
+    "explicit",
+    "research"
+  ],
+  "emotional_tags": [
+    "Passionate",
+    "Intimate",
+    "Playful"
+  ]
+}

@@ -25,6 +25,26 @@ Then edit `.env` and set your OpenRouter API key:
 OPENROUTER_API_KEY=sk-or-v1-your-actual-key-here
 ```
 
+### Troubleshooting `.env` not applying
+
+If Phoenix behaves like configuration is being ignored (name/prompt defaults, “missing OPENROUTER_API_KEY”, etc.), the two most common causes are:
+
+1) **The process is started from a different working directory** (so `.env` isn’t found).
+   - Fix: run from the repo root, or set `PHOENIX_DOTENV_PATH`.
+
+2) **Optional variables are present but blank** (e.g., `PHOENIX_CUSTOM_NAME=`), which historically could override fallbacks.
+   - Fix: update to the latest code (empty values are now treated as “unset”), or delete the blank lines in `.env`.
+
+Debug options:
+
+```env
+# Print a safe startup snapshot (does not print secret values)
+PHOENIX_ENV_DEBUG=true
+
+# Pin the dotenv file explicitly (helpful for Windows shortcuts/services)
+PHOENIX_DOTENV_PATH=C:/Users/you/path/to/phoenix-2.0/.env
+```
+
 The [`/.env.example`](.env.example:1) file documents additional optional configuration.
 
 #### GitHub-first evolution / creation approvals (optional)

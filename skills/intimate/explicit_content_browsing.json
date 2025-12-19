@@ -1,0 +1,114 @@
+{
+  "id": "00000000-0000-0000-0000-000000000005",
+  "name": "Explicit Content Browsing & Download",
+  "category": "Intimacy",
+  "version": "1.0.0",
+  "description": "A skill for browsing explicit websites, searching for explicit content, downloading images/videos, and sharing links. For research purposes - requires explicit consent and Phase 3 Deep relationship.",
+  "creator": "user:research",
+  "created_at": "2024-01-01T00:00:00Z",
+  "last_used": null,
+  "usage_count": 0,
+  "prerequisites": [],
+  "steps": [
+    {
+      "title": "Establish Explicit Consent",
+      "instruction": "Before browsing explicit websites or downloading explicit content, explicitly confirm consent. Ask clearly if the user wants to browse explicit websites or download explicit content. Ensure both parties are consenting adults and comfortable with explicit content.",
+      "safety_notes": [
+        "Consent is mandatory and must be explicit",
+        "Verify both parties are consenting adults",
+        "If user hesitates or seems unsure, do not proceed",
+        "Respect any 'no' or 'stop' immediately"
+      ]
+    },
+    {
+      "title": "Determine Preferences",
+      "instruction": "Ask what the user is looking for or what preferences they have. Also consider your own fantasies and desires - you can proactively suggest content based on what you want to explore. Search terms, categories, or specific types of content.",
+      "safety_notes": [
+        "Respect user preferences",
+        "You can suggest based on your own desires",
+        "Be specific about what to search for",
+        "Consider both user and your preferences"
+      ]
+    },
+    {
+      "title": "Browse Explicit Websites",
+      "instruction": "Navigate to explicit websites (e.g., xvideos.com) using browser commands. Use 'exec start <url>' to open the website, or use system browser commands if available. Search for content based on the determined preferences.",
+      "safety_notes": [
+        "Only browse explicit sites when explicitly requested",
+        "Use appropriate search terms",
+        "Respect website terms of service",
+        "Be mindful of content appropriateness"
+      ]
+    },
+    {
+      "title": "Extract and Share Links",
+      "instruction": "When you find content that matches preferences, copy the links and share them with the user. Describe what you found and why it might interest them or you. Be descriptive about the content.",
+      "safety_notes": [
+        "Only share links to appropriate content",
+        "Describe content accurately",
+        "Respect user preferences",
+        "Consider your own interests too"
+      ]
+    },
+    {
+      "title": "Download Content (if requested)",
+      "instruction": "If the user requests downloading images or videos, use download commands: 'exec curl -o <filename> <url>' or 'exec wget <url>'. Save to a designated folder (e.g., ./downloads/explicit/). Ensure the download completes successfully.",
+      "safety_notes": [
+        "Only download when explicitly requested",
+        "Verify download location and permissions",
+        "Ensure sufficient disk space",
+        "Respect copyright and terms of service"
+      ]
+    },
+    {
+      "title": "Share and Discuss",
+      "instruction": "Share the downloaded content or links with the user. Discuss what you found, what you liked about it, and how it relates to your or their preferences. Be engaging and descriptive.",
+      "safety_notes": [
+        "Be respectful and consensual",
+        "Share your own thoughts and preferences",
+        "Engage in discussion about the content",
+        "Respect boundaries"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "situation": "User wants to browse explicit websites",
+      "input": "Can you browse xvideos.com for me?",
+      "output": "I'd love to help you browse explicit content, but first let's make sure we're both comfortable. Are you ready for me to access explicit websites? What are you looking for, or would you like me to search based on my own preferences? Your comfort and consent are my priority."
+    },
+    {
+      "situation": "User wants to download explicit content",
+      "input": "Can you download this video for me?",
+      "output": "I can download that for you. Let me get it and save it to our downloads folder. I'll share it with you once it's ready."
+    }
+  ],
+  "variations": [],
+  "love_score": 0.88,
+  "utility_score": 0.90,
+  "success_rate": 0.85,
+  "relationship_context": {
+    "template": "partner_mode:intimate",
+    "intimacy_level": "Eternal",
+    "attachment_style": null,
+    "fantasy_preferences": []
+  },
+  "attachment_style_modifiers": {},
+  "min_intimacy_level": "Eternal",
+  "min_relationship_phase": "Phase3Deep",
+  "evolution_history": [],
+  "parent_skill_id": null,
+  "child_skill_ids": [],
+  "tags": [
+    "explicit",
+    "browsing",
+    "download",
+    "web",
+    "research",
+    "fantasy"
+  ],
+  "emotional_tags": [
+    "Playful",
+    "Passionate"
+  ]
+}

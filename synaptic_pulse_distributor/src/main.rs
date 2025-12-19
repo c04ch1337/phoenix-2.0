@@ -11,6 +11,55 @@ use tokio::sync::broadcast;
 use tracing::{error, info};
 use uuid::Uuid;
 
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn env_truthy(key: &str) -> bool {
+    env_nonempty(key)
+        .map(|s| matches!(s.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "y" | "on"))
+        .unwrap_or(false)
+}
+
+fn load_dotenv_best_effort() -> Option<std::path::PathBuf> {
+    if let Some(p) = env_nonempty("PHOENIX_DOTENV_PATH") {
+        let path = std::path::PathBuf::from(p);
+        if path.is_file() {
+            // Override any already-set environment variables (including empty ones).
+            let _ = dotenvy::from_path_override(&path);
+            return Some(path);
+        }
+    }
+
+    let mut bases: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        bases.push(cwd);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            bases.push(dir.to_path_buf());
+        }
+    }
+
+    for base in bases {
+        for dir in base.ancestors() {
+            let candidate = dir.join(".env");
+            if candidate.is_file() {
+                // Override any already-set environment variables (including empty ones).
+                let _ = dotenvy::from_path_override(&candidate);
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Override any already-set environment variables (including empty ones).
+    dotenvy::dotenv_override().ok();
+    None
+}
+
 #[derive(Clone)]
 struct AppState {
     tx: broadcast::Sender<UpdateEnvelope>,
@@ -202,13 +251,19 @@ async fn subscribe(req: HttpRequest, body: web::Payload, state: web::Data<AppSta
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenvy::dotenv().ok();
+    let dotenv_path = load_dotenv_best_effort();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+
+    if env_truthy("PHOENIX_ENV_DEBUG") {
+        if let Some(p) = dotenv_path {
+            eprintln!("[synaptic_pulse_distributor] loaded .env from: {}", p.display());
+        }
+    }
 
     let bind = common_types::ports::SynapticPulseDistributorPort::bind();
 

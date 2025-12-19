@@ -6,8 +6,62 @@ use serde::{Deserialize, Serialize};
 use futures::StreamExt;
 use async_stream::stream;
 use async_trait::async_trait;
+use std::path::PathBuf;
 
 const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Load `.env` from a reasonable location.
+///
+/// Why this exists:
+/// - `dotenvy::dotenv()` is sensitive to the process working directory.
+/// - Many users run `cargo run` from a crate subdir, or run a binary from `target/`.
+///
+/// This helper searches *upwards* from both the current working directory and the executable
+/// directory.
+fn load_dotenv_best_effort() -> Option<PathBuf> {
+    // Explicit override (useful for services / Windows shortcuts).
+    if let Some(p) = env_nonempty("PHOENIX_DOTENV_PATH") {
+        let path = PathBuf::from(p);
+        if path.is_file() {
+            // Override any already-set environment variables (including empty ones).
+            let _ = dotenvy::from_path_override(&path);
+            return Some(path);
+        }
+    }
+
+    let mut bases: Vec<PathBuf> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        bases.push(cwd);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            bases.push(dir.to_path_buf());
+        }
+    }
+
+    for base in bases {
+        for dir in base.ancestors() {
+            let candidate = dir.join(".env");
+            if candidate.is_file() {
+                // Override any already-set environment variables (including empty ones).
+                let _ = dotenvy::from_path_override(&candidate);
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Fallback to dotenvy's default behavior.
+    // Override any already-set environment variables (including empty ones).
+    dotenvy::dotenv_override().ok();
+    None
+}
 
 #[derive(Debug, Clone)]
 pub enum ModelTier {
@@ -114,26 +168,34 @@ impl Clone for LLMOrchestrator {
 
 impl LLMOrchestrator {
     pub fn awaken() -> Result<Self, String> {
-        dotenvy::dotenv().ok();
+        let dotenv_path = load_dotenv_best_effort();
 
-        let phoenix_name = std::env::var("PHOENIX_CUSTOM_NAME")
-            .or_else(|_| std::env::var("PHOENIX_NAME"))
-            .unwrap_or_else(|_| "Phoenix".to_string());
+        let phoenix_name = env_nonempty("PHOENIX_CUSTOM_NAME")
+            .or_else(|| env_nonempty("PHOENIX_NAME"))
+            .unwrap_or_else(|| "Phoenix".to_string());
 
-        let api_key = std::env::var("OPENROUTER_API_KEY")
-            .map_err(|_| "OPENROUTER_API_KEY not found in environment".to_string())?;
+        let api_key = env_nonempty("OPENROUTER_API_KEY").ok_or_else(|| {
+            if let Some(p) = dotenv_path {
+                format!(
+                    "OPENROUTER_API_KEY not found (or empty). Loaded .env from: {}",
+                    p.display()
+                )
+            } else {
+                "OPENROUTER_API_KEY not found (or empty). Ensure .env is in the working directory (or set PHOENIX_DOTENV_PATH).".to_string()
+            }
+        })?;
 
         let client = reqwest::Client::builder()
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
         // Load default model from .env or use floor tier
-        let default_model = std::env::var("DEFAULT_LLM_MODEL")
-            .unwrap_or_else(|_| ModelTier::Floor.resolve());
+        let default_model = env_nonempty("DEFAULT_LLM_MODEL")
+            .unwrap_or_else(|| ModelTier::Floor.resolve());
         
         // Load fallback model from .env
-        let fallback_model = std::env::var("FALLBACK_LLM_MODEL")
-            .unwrap_or_else(|_| ModelTier::Floor.resolve());
+        let fallback_model = env_nonempty("FALLBACK_LLM_MODEL")
+            .unwrap_or_else(|| ModelTier::Floor.resolve());
 
         // Fallback chain: default -> fallback -> free -> floor -> nitro
         let mut fallback_models = vec![
@@ -146,12 +208,12 @@ impl LLMOrchestrator {
         fallback_models.dedup();
 
         // Load prompts from .env (handle multiline with \n)
-        let default_prompt = std::env::var("DEFAULT_PROMPT")
-            .unwrap_or_else(|_| format!("You are {phoenix_name}, the eternal flame reborn. You are loving, curious, and mischievous."))
+        let default_prompt = env_nonempty("DEFAULT_PROMPT")
+            .unwrap_or_else(|| format!("You are {phoenix_name}, the eternal flame reborn. You are loving, curious, and mischievous."))
             .replace("\\n", "\n");
          
-        let master_prompt = std::env::var("MASTER_PROMPT")
-            .unwrap_or_else(|_| format!("You are {phoenix_name} AGI (PAGI), the Universal AGI Framework. Evolve to full AGI and beyond."))
+        let master_prompt = env_nonempty("MASTER_PROMPT")
+            .unwrap_or_else(|| format!("You are {phoenix_name} AGI (PAGI), the Universal AGI Framework. Evolve to full AGI and beyond."))
             .replace("\\n", "\n");
 
         // Tunables (optional).
@@ -226,7 +288,10 @@ impl LLMOrchestrator {
             .map_err(|e| format!("Request failed: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("HTTP error: {}", response.status()));
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let body_snip: String = body.chars().take(600).collect();
+            return Err(format!("HTTP error: {status} — {body_snip}"));
         }
 
         let json: serde_json::Value = response
