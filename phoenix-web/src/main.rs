@@ -334,6 +334,10 @@ struct ConfigSetRequest {
 }
 
 // Dating Profile Data Structures
+// These request payload types are primarily used for JSON (de)serialization.
+// Not every field is currently referenced in scoring logic, so silence dead_code
+// warnings to keep builds clean.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct DatingProfile {
     #[serde(rename = "personalInfo")]
@@ -351,6 +355,7 @@ struct DatingProfile {
     interests: InterestsData,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct PersonalInfo {
     name: String,
@@ -359,6 +364,7 @@ struct PersonalInfo {
     location: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct CommunicationStyleData {
     style: String, // "Direct" | "Playful" | "Thoughtful" | "Warm" | "Reflective"
@@ -369,6 +375,7 @@ struct CommunicationStyleData {
     playfulness: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct EmotionalNeedsData {
     #[serde(rename = "affectionNeed")]
@@ -384,6 +391,7 @@ struct EmotionalNeedsData {
     impulsivity: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct LoveLanguagesData {
     #[serde(rename = "wordsOfAffirmation")]
@@ -397,12 +405,14 @@ struct LoveLanguagesData {
     gifts: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct AttachmentStyleData {
     style: String, // "Secure" | "Anxious" | "Avoidant" | "Disorganized"
     description: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RelationshipGoalsData {
     goals: Vec<String>,
@@ -410,6 +420,7 @@ struct RelationshipGoalsData {
     intimacy_comfort: String, // "Light" | "Deep" | "Eternal"
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct InterestsData {
     hobbies: Vec<String>,
@@ -2153,6 +2164,7 @@ async fn api_archetype_match(
     _state: web::Data<AppState>,
     body: web::Json<DatingProfile>,
 ) -> impl Responder {
+    info!("archetype.match requested");
     let profile = body.into_inner();
     let matches = match_archetypes(&profile).await;
     
@@ -2167,6 +2179,8 @@ async fn api_archetype_apply(
     let request = body.into_inner();
     let sign_str = &request.sign;
     let profile = request.profile;
+
+    info!("archetype.apply requested: sign={}", sign_str);
     
     // Validate sign
     let Some(_sign) = parse_zodiac_sign(sign_str) else {
@@ -2391,6 +2405,8 @@ async fn main() -> std::io::Result<()> {
                     .service(web::resource("/config").route(web::post().to(api_config_set)))
                     .service(web::resource("/relational-state").route(web::get().to(api_relational_state_get)))
                     .service(web::resource("/relational-state").route(web::post().to(api_relational_state_update)))
+                    .service(web::resource("/archetype/match").route(web::post().to(api_archetype_match)))
+                    .service(web::resource("/archetype/apply").route(web::post().to(api_archetype_apply)))
                     .service(web::resource("/command").route(web::post().to(api_command)))
                     .service(web::resource("/speak").route(web::post().to(api_speak)))
                     // Route ordering matters: Actix resolves the most specific match first, but

@@ -183,9 +183,9 @@ export const DevToolsView: React.FC = () => {
                 <div className="bg-black/40 border border-white/10 rounded-lg p-3 font-mono text-xs text-gray-200 space-y-2">
                   <div>exit_code: <span className="text-white">{execOut.exit_code}</span></div>
                   <div className="text-gray-400">stdout:</div>
-                  <pre className="whitespace-pre-wrap break-words">{execOut.stdout || '(empty)'}</pre>
+                  <pre className="whitespace-pre-wrap wrap-break-word">{execOut.stdout || '(empty)'}</pre>
                   <div className="text-gray-400">stderr:</div>
-                  <pre className="whitespace-pre-wrap break-words">{execOut.stderr || '(empty)'}</pre>
+                  <pre className="whitespace-pre-wrap wrap-break-word">{execOut.stderr || '(empty)'}</pre>
                 </div>
               )}
             </div>

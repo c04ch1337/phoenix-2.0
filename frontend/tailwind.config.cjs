@@ -28,6 +28,10 @@ module.exports = {
           700: '#2f2b3a',
         },
       },
+      // Tailwind defaults top out at z-50; we use z-100 for modals.
+      zIndex: {
+        100: '100',
+      },
       animation: {
         float: 'float 15s infinite linear',
         'heartbeat-slow': 'heartbeat 4s infinite ease-in-out',

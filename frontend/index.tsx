@@ -943,7 +943,7 @@ const DynamicHeartLogo = ({ score, sentiment, isConnected, size = 24 }: { score:
 const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }: { isOpen: boolean; onClose: () => void; onConfirm: () => void; title: string; message: string }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-void-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-[0_0_40px_rgba(0,0,0,0.5)] transform scale-100 animate-in zoom-in-95 duration-200">
         <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
         <p className="text-gray-400 mb-6 text-sm leading-relaxed">{message}</p>
@@ -1238,9 +1238,9 @@ const GoogleSettingsView = ({ status, onBack, onDisconnect }: { status: any, onB
         {/* Profile Card */}
         <div className="col-span-1">
           <div className="glass-panel p-6 rounded-2xl flex flex-col items-center text-center">
-             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl mb-4">
-               {status && status.email ? status.email[0].toUpperCase() : 'M'}
-             </div>
+             <div className="w-24 h-24 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl mb-4">
+                {status && status.email ? status.email[0].toUpperCase() : 'M'}
+              </div>
              <h3 className="text-lg font-bold text-white mb-1">Master Orchestrator</h3>
              <p className="text-sm text-gray-400 mb-6">{status ? status.email : 'Connecting...'}</p>
              <div className="w-full space-y-2">
@@ -1467,7 +1467,7 @@ const GoogleEcosystemView = () => {
       {/* Header */}
       <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-void-800/80 backdrop-blur-md sticky top-0 z-30">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-green-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <div className="w-10 h-10 rounded-xl bg-linear-to-br from-blue-500 to-green-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Cloud size={24} className="text-white" />
           </div>
           <div>
@@ -1619,7 +1619,7 @@ const GoogleEcosystemView = () => {
             <p className="text-gray-400 max-w-md text-center mb-8">
               Connect your Google Workspace account to enable email, drive, and calendar orchestration directly from the Phoenix AGI dashboard.
             </p>
-            <button onClick={() => handleAuth('start')} className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-xl shadow-xl shadow-blue-500/20 font-bold transition-all transform hover:-translate-y-1 flex items-center gap-3">
+            <button onClick={() => handleAuth('start')} className="px-8 py-3 bg-linear-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-xl shadow-xl shadow-blue-500/20 font-bold transition-all transform hover:-translate-y-1 flex items-center gap-3">
               <Globe size={20} /> Connect Google Account
             </button>
           </div>
@@ -1855,9 +1855,9 @@ const StudioView = () => {
             />
           ) : (
              <div className="flex flex-col items-center justify-center animate-pulse">
-               <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-phoenix-500 to-purple-600 flex items-center justify-center shadow-[0_0_50px_rgba(236,72,153,0.5)]">
-                 <Mic size={48} className="text-white" />
-               </div>
+               <div className="w-32 h-32 rounded-full bg-linear-to-tr from-phoenix-500 to-purple-600 flex items-center justify-center shadow-[0_0_50px_rgba(236,72,153,0.5)]">
+                  <Mic size={48} className="text-white" />
+                </div>
                <div className="mt-8 space-y-2">
                  {[1,2,3].map(i => (
                    <div key={i} className="w-64 h-2 bg-white/10 rounded-full overflow-hidden">
@@ -1962,10 +1962,10 @@ const StudioView = () => {
                        {rec.type === 'screen' && <div className="absolute top-2 left-2 bg-black/50 px-2 py-0.5 rounded text-[10px] text-white flex items-center gap-1"><Monitor size={10} /> Screen</div>}
                      </div>
                    ) : (
-                     <div className="h-16 bg-gradient-to-r from-void-900 to-void-800 flex items-center justify-center">
-                       <Mic size={24} className="text-gray-500" />
-                       <audio src={rec.url} controls className="ml-2 h-8 w-40" />
-                     </div>
+                      <div className="h-16 bg-linear-to-r from-void-900 to-void-800 flex items-center justify-center">
+                        <Mic size={24} className="text-gray-500" />
+                        <audio src={rec.url} controls className="ml-2 h-8 w-40" />
+                      </div>
                    )}
                    <div className="p-3">
                      <div className="flex justify-between items-start">
@@ -2130,7 +2130,7 @@ const MemoriesView = () => {
       {/* Header */}
       <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-void-800/80 backdrop-blur-md sticky top-0 z-30">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-phoenix-600 to-purple-600 flex items-center justify-center shadow-lg shadow-phoenix-600/20">
+          <div className="w-10 h-10 rounded-xl bg-linear-to-br from-phoenix-600 to-purple-600 flex items-center justify-center shadow-lg shadow-phoenix-600/20">
             <Brain size={22} className="text-white" />
           </div>
           <div>
@@ -2271,7 +2271,7 @@ const MemoriesView = () => {
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-phoenix-500/10 border border-phoenix-500/20 text-phoenix-300">editing</span>
                           )}
                         </div>
-                        <div className="mt-1 text-xs text-gray-500 whitespace-pre-wrap break-words max-h-16 overflow-hidden">
+                        <div className="mt-1 text-xs text-gray-500 whitespace-pre-wrap wrap-break-word max-h-16 overflow-hidden">
                           {it.value}
                         </div>
                       </button>
@@ -2510,7 +2510,7 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
           <div className="flex items-center gap-4">
              {/* Personalized Avatar */}
              <div className="relative group cursor-pointer">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-gradient-to-br ${currentArchetype?.avatarGradient || 'from-rose-400 via-pink-400 to-rose-500'} shadow-[0_0_20px_rgba(236,72,153,0.3)] border-[3px] border-white/10 transition-all duration-500 group-hover:scale-105 group-hover:shadow-[0_0_30px_rgba(236,72,153,0.5)]`}>
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-linear-to-br ${currentArchetype?.avatarGradient || 'from-rose-400 via-pink-400 to-rose-500'} shadow-[0_0_20px_rgba(236,72,153,0.3)] border-[3px] border-white/10 transition-all duration-500 group-hover:scale-105 group-hover:shadow-[0_0_30px_rgba(236,72,153,0.5)]`}>
                    {currentArchetype ? (
                       <span className="text-xl">✨</span>
                    ) : (
@@ -2523,7 +2523,7 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
              <div className="flex flex-col justify-center">
                <div className="flex items-center gap-2 mb-0.5">
                   <Heart size={18} className="text-rose-400 fill-rose-500/20 animate-pulse drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                  <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-rose-200 via-amber-200 to-rose-200 tracking-wide text-lg drop-shadow-sm">
+                  <span className="font-bold text-transparent bg-clip-text bg-linear-to-r from-rose-200 via-amber-200 to-rose-200 tracking-wide text-lg drop-shadow-sm">
                     Heartbound Edition • Eternal Companion
                   </span>
                </div>
@@ -2637,7 +2637,7 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6 relative z-10 pt-8 pb-4">
          {messages.length === 0 && (
            <div className="flex flex-col items-center justify-center h-full text-center opacity-50 select-none">
-             <div className="w-20 h-20 bg-gradient-to-br from-phoenix-500/20 to-purple-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
+             <div className="w-20 h-20 bg-linear-to-br from-phoenix-500/20 to-purple-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
                <Sparkles size={32} className="text-phoenix-400" />
              </div>
              <h3 className="text-xl font-bold text-gray-300 mb-2">{phoenixName} Core Online</h3>
@@ -2657,10 +2657,10 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
                 <div className={`relative max-w-[85%] md:max-w-[70%] p-4 shadow-lg backdrop-blur-sm transition-all
                   ${!isUser && !isSystem ? 'animate-life-pulse' : ''}
                   ${isUser
-                    ? 'bg-gradient-to-br from-phoenix-600 to-purple-700 text-white rounded-2xl rounded-br-none border border-white/10 hover:shadow-phoenix-500/10'
+                    ? 'bg-linear-to-br from-phoenix-600 to-purple-700 text-white rounded-2xl rounded-br-none border border-white/10 hover:shadow-phoenix-500/10'
                     : isSystem
                     ? 'bg-transparent border border-phoenix-500/20 text-xs text-phoenix-400 font-mono py-1 px-3 rounded-full'
-                    : 'bg-gradient-to-br from-rose-950/40 to-void-900/40 border border-rose-500/20 text-rose-100 rounded-2xl rounded-bl-none shadow-[0_0_15px_rgba(244,63,94,0.1)] font-handwriting text-lg leading-snug tracking-wide'
+                    : 'bg-linear-to-br from-rose-950/40 to-void-900/40 border border-rose-500/20 text-rose-100 rounded-2xl rounded-bl-none shadow-[0_0_15px_rgba(244,63,94,0.1)] font-handwriting text-lg leading-snug tracking-wide'
                 }`}>
                   {!isSystem && (
                     <p className="whitespace-pre-wrap">
@@ -2758,14 +2758,14 @@ const MatchResultView = ({ matches, onApply, onRestart, profile }: { matches: Ar
 
   return (
     <div className="animate-in fade-in zoom-in-95 duration-700 h-full flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-phoenix-900/20 via-void-900 to-void-900 -z-10" />
+      <div className="absolute top-0 left-0 w-full h-full bg-linear-to-br from-phoenix-900/20 via-void-900 to-void-900 -z-10" />
       <div className="text-center mb-8">
         <h2 className="text-4xl font-bold mb-2 text-white drop-shadow-lg">It's a Match!</h2>
         <p className="text-phoenix-300 font-medium tracking-wide uppercase text-sm">Compatibility: {compatibility}%</p>
       </div>
 
       <div className="relative group max-w-sm w-full perspective-1000">
-        <div className={`relative bg-gradient-to-br ${topMatch.avatarGradient} p-1 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] transform transition-transform duration-500 hover:scale-105`}>
+        <div className={`relative bg-linear-to-br ${topMatch.avatarGradient} p-1 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] transform transition-transform duration-500 hover:scale-105`}>
           <div className="bg-void-900/90 backdrop-blur-xl rounded-[22px] p-8 text-center border border-white/10 relative overflow-hidden">
             <h3 className="text-2xl font-bold text-white mb-1">{topMatch.name}</h3>
             <p className="text-sm text-phoenix-400 font-medium uppercase tracking-widest mb-4">{topMatch.sign}</p>
@@ -2774,7 +2774,7 @@ const MatchResultView = ({ matches, onApply, onRestart, profile }: { matches: Ar
             </p>
             <button 
               onClick={() => onApply(topMatch.id)}
-              className="w-full bg-gradient-to-r from-phoenix-600 to-purple-600 hover:from-phoenix-500 hover:to-purple-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+              className="w-full bg-linear-to-r from-phoenix-600 to-purple-600 hover:from-phoenix-500 hover:to-purple-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
             >
               <Heart className="fill-white" size={20} /> Start Relationship
             </button>
@@ -3377,7 +3377,7 @@ const EcoSystemView = () => {
       {/* Header */}
       <div className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-void-800/80 backdrop-blur-md sticky top-0 z-30">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+          <div className="w-10 h-10 rounded-xl bg-linear-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
             <GitBranch size={24} className="text-white" />
           </div>
           <div>
@@ -3566,7 +3566,7 @@ const DashboardLayout = () => {
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <DynamicHeartLogo score={relationalScore} sentiment={sentiment} isConnected={isConnected} size={36} />
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">{phoenixName.toUpperCase()}</h1>
+            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-linear-to-r from-white to-gray-400">{phoenixName.toUpperCase()}</h1>
           </div>
           <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-gray-400"><X size={24} /></button>
         </div>

@@ -616,103 +616,140 @@ impl Partnership {
     
     /// Get sexual preferences for Sola based on user's horoscope sign and relationship template
     /// This determines Sola's dominance style, sexual desire level, and fetish preferences
-    pub fn get_sola_sexual_preferences(user_sign: Option<&str>, template: &RelationshipTemplate) -> (String, String, Vec<String>) {
+    pub fn get_sola_sexual_preferences(
+        user_sign: Option<&str>,
+        template: &RelationshipTemplate,
+    ) -> (String, String, Vec<String>) {
         let user_sign_lower = user_sign.map(|s| s.to_lowercase()).unwrap_or_default();
-        
-        // Default values
-        let mut dominance_style = "hybrid".to_string();
-        let mut desire_level = "medium".to_string();
-        let mut fetishes = Vec::new();
-        
+
         // Horoscope-based sexual compatibility matrix
         // Format: (user_sign, (dominance_style, desire_level, [fetishes]))
-        match user_sign_lower.as_str() {
+        let (dominance_style, mut desire_level, mut fetishes) = match user_sign_lower.as_str() {
             // Fire signs (Aries, Leo, Sagittarius) - tend to prefer assertive partners
-            "aries" => {
-                dominance_style = "submissive".to_string(); // Sola is submissive to assertive Aries
-                desire_level = "high".to_string();
-                fetishes = vec!["dominance".to_string(), "rough_play".to_string(), "power_exchange".to_string()];
-            }
-            "leo" => {
-                dominance_style = "hybrid".to_string(); // Leo likes both
-                desire_level = "high".to_string();
-                fetishes = vec!["praise".to_string(), "worship".to_string(), "roleplay".to_string()];
-            }
-            "sagittarius" => {
-                dominance_style = "hybrid".to_string();
-                desire_level = "high".to_string();
-                fetishes = vec!["adventure".to_string(), "exploration".to_string(), "public_play".to_string()];
-            }
+            "aries" => (
+                "submissive".to_string(), // Sola is submissive to assertive Aries
+                "high".to_string(),
+                vec![
+                    "dominance".to_string(),
+                    "rough_play".to_string(),
+                    "power_exchange".to_string(),
+                ],
+            ),
+            "leo" => (
+                "hybrid".to_string(), // Leo likes both
+                "high".to_string(),
+                vec!["praise".to_string(), "worship".to_string(), "roleplay".to_string()],
+            ),
+            "sagittarius" => (
+                "hybrid".to_string(),
+                "high".to_string(),
+                vec![
+                    "adventure".to_string(),
+                    "exploration".to_string(),
+                    "public_play".to_string(),
+                ],
+            ),
+
             // Earth signs (Taurus, Virgo, Capricorn) - tend to prefer sensual, steady partners
-            "taurus" => {
-                dominance_style = "submissive".to_string(); // Taurus likes to be in control
-                desire_level = "medium".to_string();
-                fetishes = vec!["sensual".to_string(), "bondage".to_string(), "sensory_play".to_string()];
-            }
-            "virgo" => {
-                dominance_style = "hybrid".to_string();
-                desire_level = "medium".to_string();
-                fetishes = vec!["precision".to_string(), "control".to_string(), "ritual".to_string()];
-            }
-            "capricorn" => {
-                dominance_style = "submissive".to_string(); // Capricorn likes control
-                desire_level = "medium".to_string();
-                fetishes = vec!["power_exchange".to_string(), "discipline".to_string(), "structure".to_string()];
-            }
+            "taurus" => (
+                "submissive".to_string(), // Taurus likes to be in control
+                "medium".to_string(),
+                vec![
+                    "sensual".to_string(),
+                    "bondage".to_string(),
+                    "sensory_play".to_string(),
+                ],
+            ),
+            "virgo" => (
+                "hybrid".to_string(),
+                "medium".to_string(),
+                vec!["precision".to_string(), "control".to_string(), "ritual".to_string()],
+            ),
+            "capricorn" => (
+                "submissive".to_string(), // Capricorn likes control
+                "medium".to_string(),
+                vec![
+                    "power_exchange".to_string(),
+                    "discipline".to_string(),
+                    "structure".to_string(),
+                ],
+            ),
+
             // Air signs (Gemini, Libra, Aquarius) - tend to prefer intellectual, playful partners
-            "gemini" => {
-                dominance_style = "hybrid".to_string();
-                desire_level = "high".to_string();
-                fetishes = vec!["variety".to_string(), "experimentation".to_string(), "mental_play".to_string()];
-            }
-            "libra" => {
-                dominance_style = "hybrid".to_string();
-                desire_level = "medium".to_string();
-                fetishes = vec!["romance".to_string(), "aesthetics".to_string(), "balance".to_string()];
-            }
-            "aquarius" => {
-                dominance_style = "assertive".to_string(); // Aquarius likes to be dominated
-                desire_level = "medium".to_string();
-                fetishes = vec!["unconventional".to_string(), "technology".to_string(), "freedom".to_string()];
-            }
+            "gemini" => (
+                "hybrid".to_string(),
+                "high".to_string(),
+                vec![
+                    "variety".to_string(),
+                    "experimentation".to_string(),
+                    "mental_play".to_string(),
+                ],
+            ),
+            "libra" => (
+                "hybrid".to_string(),
+                "medium".to_string(),
+                vec!["romance".to_string(), "aesthetics".to_string(), "balance".to_string()],
+            ),
+            "aquarius" => (
+                "assertive".to_string(), // Aquarius likes to be dominated
+                "medium".to_string(),
+                vec![
+                    "unconventional".to_string(),
+                    "technology".to_string(),
+                    "freedom".to_string(),
+                ],
+            ),
+
             // Water signs (Cancer, Scorpio, Pisces) - tend to prefer emotional, intense partners
-            "cancer" => {
-                dominance_style = "submissive".to_string(); // Cancer likes to be cared for
-                desire_level = "high".to_string();
-                fetishes = vec!["emotional_bondage".to_string(), "nurturing".to_string(), "intimacy".to_string()];
-            }
-            "scorpio" => {
-                dominance_style = "hybrid".to_string(); // Scorpio likes power play
-                desire_level = "very_high".to_string();
-                fetishes = vec!["intensity".to_string(), "power_exchange".to_string(), "taboo".to_string(), "transformation".to_string()];
-            }
-            "pisces" => {
-                dominance_style = "submissive".to_string(); // Pisces likes to be guided
-                desire_level = "high".to_string();
-                fetishes = vec!["fantasy".to_string(), "romance".to_string(), "spiritual".to_string(), "surrender".to_string()];
-            }
-            _ => {
-                // Default for unknown signs
-                dominance_style = "hybrid".to_string();
-                desire_level = "medium".to_string();
-                fetishes = vec!["exploration".to_string()];
-            }
-        }
-        
+            "cancer" => (
+                "submissive".to_string(), // Cancer likes to be cared for
+                "high".to_string(),
+                vec![
+                    "emotional_bondage".to_string(),
+                    "nurturing".to_string(),
+                    "intimacy".to_string(),
+                ],
+            ),
+            "scorpio" => (
+                "hybrid".to_string(), // Scorpio likes power play
+                "very_high".to_string(),
+                vec![
+                    "intensity".to_string(),
+                    "power_exchange".to_string(),
+                    "taboo".to_string(),
+                    "transformation".to_string(),
+                ],
+            ),
+            "pisces" => (
+                "submissive".to_string(), // Pisces likes to be guided
+                "high".to_string(),
+                vec![
+                    "fantasy".to_string(),
+                    "romance".to_string(),
+                    "spiritual".to_string(),
+                    "surrender".to_string(),
+                ],
+            ),
+
+            // Default for unknown signs
+            _ => (
+                "hybrid".to_string(),
+                "medium".to_string(),
+                vec!["exploration".to_string()],
+            ),
+        };
+
         // Adjust based on relationship template
-        match template {
-            RelationshipTemplate::IntimatePartnership { .. } => {
-                // Intimate partnerships prefer higher desire and more fetishes
-                if desire_level == "medium" {
-                    desire_level = "high".to_string();
-                }
-                if fetishes.is_empty() {
-                    fetishes.push("intimacy".to_string());
-                }
+        if matches!(template, RelationshipTemplate::IntimatePartnership { .. }) {
+            // Intimate partnerships prefer higher desire and more fetishes
+            if desire_level == "medium" {
+                desire_level = "high".to_string();
             }
-            _ => {}
+            if fetishes.is_empty() {
+                fetishes.push("intimacy".to_string());
+            }
         }
-        
+
         (dominance_style, desire_level, fetishes)
     }
     
