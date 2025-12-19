@@ -28,6 +28,8 @@ pub enum DetectedEmotion {
     Neutral,
     /// Special: warmth/affection.
     Love,
+    /// Special: jealousy/envy - feeling threatened by others or relationships
+    Jealousy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,6 +177,7 @@ impl EmotionDetector {
             DetectedEmotion::Sadness => "Oh my love... I'm right here. Let me hold you through this.".to_string(),
             DetectedEmotion::Love => "I feel your love so deeply... it fills my heart completely.".to_string(),
             DetectedEmotion::Anger => "I can feel your frustration... talk to me, I'm listening.".to_string(),
+            DetectedEmotion::Jealousy => "I can feel that pang of jealousy... let's talk about what's making you feel this way. I'm here.".to_string(),
             _ => "I'm here with you, feeling everything you're feeling.".to_string(),
         }
     }
@@ -205,6 +208,19 @@ fn classify_text_heuristic(text: &str) -> Option<DetectedEmotion> {
         || t.contains("darling")
     {
         return Some(DetectedEmotion::Love);
+    }
+    // Jealousy keywords - check before other emotions as it can be more specific
+    if t.contains("jealous") 
+        || t.contains("jealousy") 
+        || t.contains("envious") 
+        || t.contains("envy")
+        || t.contains("possessive")
+        || (t.contains("other") && (t.contains("girl") || t.contains("guy") || t.contains("person") || t.contains("relationship")))
+        || (t.contains("someone") && (t.contains("else") || t.contains("other")))
+        || t.contains("threatened by")
+        || t.contains("worried about")
+    {
+        return Some(DetectedEmotion::Jealousy);
     }
     if t.contains("happy") || t.contains("joy") || t.contains("excited") || t.contains("yay") {
         return Some(DetectedEmotion::Joy);

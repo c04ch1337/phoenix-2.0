@@ -26,17 +26,17 @@ if %ERRORLEVEL% neq 0 (
 
 REM Build backend
 echo Building backend...
-cargo build --release --bin phoenix-web
+cargo build --release --bin pagi-sola-web
 if %ERRORLEVEL% neq 0 (
     echo Error building backend.
     exit /b %ERRORLEVEL%
 )
 
-REM Copy phoenix-web.exe to staging
-echo Copying phoenix-web.exe to staging...
-copy "%RELEASE_DIR%\phoenix-web.exe" "%STAGING_DIR%\"
+REM Copy pagi-sola-web.exe to staging
+echo Copying pagi-sola-web.exe to staging...
+copy "%RELEASE_DIR%\pagi-sola-web.exe" "%STAGING_DIR%\"
 if %ERRORLEVEL% neq 0 (
-    echo Error copying phoenix-web.exe.
+    echo Error copying pagi-sola-web.exe.
     exit /b %ERRORLEVEL%
 )
 

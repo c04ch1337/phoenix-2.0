@@ -63,6 +63,10 @@ impl AffectionSwitchParser {
         switch_patterns.insert("AFRAID".to_string(), DetectedEmotion::Fear);
         switch_patterns.insert("SURPRISE".to_string(), DetectedEmotion::Surprise);
         switch_patterns.insert("SURPRISED".to_string(), DetectedEmotion::Surprise);
+        switch_patterns.insert("JEALOUS".to_string(), DetectedEmotion::Jealousy);
+        switch_patterns.insert("JEALOUSY".to_string(), DetectedEmotion::Jealousy);
+        switch_patterns.insert("ENVY".to_string(), DetectedEmotion::Jealousy);
+        switch_patterns.insert("ENVIOUS".to_string(), DetectedEmotion::Jealousy);
 
         let mut emoji_patterns = HashMap::new();
         // Love emojis
@@ -98,6 +102,12 @@ impl AffectionSwitchParser {
         emoji_patterns.insert("💔".to_string(), DetectedEmotion::Sadness);
         emoji_patterns.insert("😞".to_string(), DetectedEmotion::Sadness);
         emoji_patterns.insert("😔".to_string(), DetectedEmotion::Sadness);
+        // Jealousy emojis
+        emoji_patterns.insert("😤".to_string(), DetectedEmotion::Jealousy);
+        emoji_patterns.insert("😠".to_string(), DetectedEmotion::Jealousy);
+        emoji_patterns.insert("😰".to_string(), DetectedEmotion::Jealousy);
+        emoji_patterns.insert("😟".to_string(), DetectedEmotion::Jealousy);
+        emoji_patterns.insert("😕".to_string(), DetectedEmotion::Jealousy);
         // Calm emojis
         emoji_patterns.insert("😌".to_string(), DetectedEmotion::Neutral);
         emoji_patterns.insert("🕊️".to_string(), DetectedEmotion::Neutral);
@@ -292,6 +302,7 @@ impl EmojiResponseGenerator {
         emotion_to_emoji.insert(DetectedEmotion::Fear, vec!["💙", "🕊️", "☮️"]);
         emotion_to_emoji.insert(DetectedEmotion::Surprise, vec!["😲", "✨", "🌟"]);
         emotion_to_emoji.insert(DetectedEmotion::Disgust, vec!["💙", "🕊️"]);
+        emotion_to_emoji.insert(DetectedEmotion::Jealousy, vec!["😤", "😠", "💔", "😰", "😟", "😕"]);
         emotion_to_emoji.insert(DetectedEmotion::Neutral, vec!["💙", "😌", "🕊️", "☮️"]);
 
         Self {

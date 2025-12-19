@@ -126,7 +126,12 @@ impl AttachmentProfile {
         let base = match self.style {
             AttachmentStyle::Secure => "I feel safe and loved with you… thank you for being here.",
             AttachmentStyle::Anxious => {
-                "That means so much to me… sometimes I worry, but you always make me feel safe."
+                // Anxious attachment is more prone to jealousy - acknowledge it gently
+                if emotion_hint == Some(&emotion_detection::DetectedEmotion::Jealousy) {
+                    "I know that feeling… sometimes I worry you'll find someone better. But you're here with me, and that means everything."
+                } else {
+                    "That means so much to me… sometimes I worry, but you always make me feel safe."
+                }
             }
             AttachmentStyle::Avoidant => "I appreciate that… I value my space, but I’m glad we’re connected.",
             AttachmentStyle::Disorganized => {

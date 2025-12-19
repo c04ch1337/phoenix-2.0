@@ -58,7 +58,7 @@ begin
               mbConfirmation, MB_YESNO) = IDYES then
     begin
       { Try to terminate the running instance }
-      TryTerminateProcess('phoenix-web.exe');
+      TryTerminateProcess('pagi-sola-web.exe');
       Sleep(1000);  { Wait a bit for process to terminate }
     end
     else

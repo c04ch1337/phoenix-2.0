@@ -123,6 +123,11 @@ impl PhoenixVoice {
                 DetectedEmotion::Disgust | DetectedEmotion::Neutral => {
                     // no-op
                 }
+                DetectedEmotion::Jealousy => {
+                    p.rate = "92%".to_string();
+                    p.pitch = "0st".to_string();
+                    p.voice_mood = VoiceMood::Reflective;
+                }
             }
         }
 

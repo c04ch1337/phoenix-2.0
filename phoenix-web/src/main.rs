@@ -31,6 +31,8 @@ use context_engine::{ContextEngine, ContextRequest, ContextMemory, ContextLayer}
 use neural_cortex_strata::{NeuralCortexStrata, MemoryLayer};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ecosystem_manager::EcosystemManager;
+use horoscope_archetypes::{ZodiacSign, ZodiacPersonality, CommunicationStyle};
+use std::collections::HashMap;
 // ToolAgent and ToolAgentConfig are used in handle_unrestricted_execution
 // but imported there via use statement
 
@@ -331,6 +333,136 @@ struct ConfigSetRequest {
     user_preferred_alias: Option<String>,
 }
 
+// Dating Profile Data Structures
+#[derive(Debug, Deserialize)]
+struct DatingProfile {
+    #[serde(rename = "personalInfo")]
+    personal_info: PersonalInfo,
+    #[serde(rename = "communicationStyle")]
+    communication_style: CommunicationStyleData,
+    #[serde(rename = "emotionalNeeds")]
+    emotional_needs: EmotionalNeedsData,
+    #[serde(rename = "loveLanguages")]
+    love_languages: LoveLanguagesData,
+    #[serde(rename = "attachmentStyle")]
+    attachment_style: AttachmentStyleData,
+    #[serde(rename = "relationshipGoals")]
+    relationship_goals: RelationshipGoalsData,
+    interests: InterestsData,
+}
+
+#[derive(Debug, Deserialize)]
+struct PersonalInfo {
+    name: String,
+    #[serde(rename = "ageRange")]
+    age_range: String,
+    location: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommunicationStyleData {
+    style: String, // "Direct" | "Playful" | "Thoughtful" | "Warm" | "Reflective"
+    #[serde(rename = "energyLevel")]
+    energy_level: f64,
+    openness: f64,
+    assertiveness: f64,
+    playfulness: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmotionalNeedsData {
+    #[serde(rename = "affectionNeed")]
+    affection_need: f64,
+    #[serde(rename = "reassuranceNeed")]
+    reassurance_need: f64,
+    #[serde(rename = "emotionalAvailability")]
+    emotional_availability: f64,
+    #[serde(rename = "intimacyDepth")]
+    intimacy_depth: f64,
+    #[serde(rename = "conflictTolerance")]
+    conflict_tolerance: f64,
+    impulsivity: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoveLanguagesData {
+    #[serde(rename = "wordsOfAffirmation")]
+    words_of_affirmation: f64,
+    #[serde(rename = "qualityTime")]
+    quality_time: f64,
+    #[serde(rename = "physicalTouch")]
+    physical_touch: f64,
+    #[serde(rename = "actsOfService")]
+    acts_of_service: f64,
+    gifts: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct AttachmentStyleData {
+    style: String, // "Secure" | "Anxious" | "Avoidant" | "Disorganized"
+    description: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RelationshipGoalsData {
+    goals: Vec<String>,
+    #[serde(rename = "intimacyComfort")]
+    intimacy_comfort: String, // "Light" | "Deep" | "Eternal"
+}
+
+#[derive(Debug, Deserialize)]
+struct InterestsData {
+    hobbies: Vec<String>,
+    #[serde(rename = "favoriteTopics")]
+    favorite_topics: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ArchetypeMatch {
+    sign: String,
+    name: String,
+    description: String,
+    compatibility: f64,
+    traits: serde_json::Value,
+    #[serde(rename = "styleBias")]
+    style_bias: String,
+    #[serde(rename = "moodPreferences")]
+    mood_preferences: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct MatchResponse {
+    matches: Vec<ArchetypeMatch>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApplyArchetypeRequest {
+    sign: String,
+    profile: DatingProfile,
+}
+
+#[derive(Debug, Serialize)]
+struct ApplyArchetypeResponse {
+    success: bool,
+    message: String,
+    #[serde(rename = "updatedEnvVars")]
+    updated_env_vars: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RelationalStateResponse {
+    score: i32,
+    sentiment: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RelationalStateUpdateRequest {
+    #[serde(default)]
+    score: Option<i32>,
+    #[serde(default)]
+    sentiment: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct ConfigSetResponse {
     status: &'static str,
@@ -474,6 +606,56 @@ async fn api_config_get(_state: web::Data<AppState>) -> impl Responder {
         openrouter_api_key_set: env_nonempty("OPENROUTER_API_KEY").is_some(),
         user_name,
         user_preferred_alias,
+    })
+}
+
+async fn api_relational_state_get(state: web::Data<AppState>) -> impl Responder {
+    // Retrieve from vaults or use defaults
+    let score = state.vaults.recall_soul("ui:relational_score")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(50);
+    
+    let sentiment = state.vaults.recall_soul("ui:sentiment")
+        .unwrap_or_else(|| "neutral".to_string());
+    
+    HttpResponse::Ok().json(RelationalStateResponse {
+        score,
+        sentiment,
+    })
+}
+
+async fn api_relational_state_update(state: web::Data<AppState>, body: web::Json<RelationalStateUpdateRequest>) -> impl Responder {
+    // Update score if provided
+    if let Some(score) = body.score {
+        let clamped = score.clamp(0, 100);
+        if let Err(e) = state.vaults.store_soul("ui:relational_score", &clamped.to_string()) {
+            return HttpResponse::BadRequest().json(json!({"type": "error", "message": format!("Failed to store score: {}", e)}));
+        }
+    }
+    
+    // Update sentiment if provided
+    if let Some(ref sentiment) = body.sentiment {
+        let valid_sentiments = ["positive", "negative", "neutral"];
+        if !valid_sentiments.contains(&sentiment.as_str()) {
+            return HttpResponse::BadRequest().json(json!({"type": "error", "message": "Invalid sentiment. Must be: positive, negative, or neutral"}));
+        }
+        
+        if let Err(e) = state.vaults.store_soul("ui:sentiment", sentiment) {
+            return HttpResponse::BadRequest().json(json!({"type": "error", "message": format!("Failed to store sentiment: {}", e)}));
+        }
+    }
+    
+    // Return updated state
+    let score = state.vaults.recall_soul("ui:relational_score")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(50);
+    
+    let sentiment = state.vaults.recall_soul("ui:sentiment")
+        .unwrap_or_else(|| "neutral".to_string());
+    
+    HttpResponse::Ok().json(RelationalStateResponse {
+        score,
+        sentiment,
     })
 }
 
@@ -1111,10 +1293,43 @@ async fn handle_system_command(state: &AppState, cmd: &str) -> serde_json::Value
                 Err(e) => json!({"type": "error", "message": e}),
             }
         }
+        "keylogger" => {
+            if parts.len() < 3 {
+                return json!({"type": "error", "message": "Usage: system keylogger <start|stop> | path=..."});
+            }
+            let action = parts[2].to_lowercase();
+            let enabled = action == "start";
+            let log_path = params.get("path").cloned();
+            
+            match state.system.set_keylogger_enabled(enabled, log_path).await {
+                Ok(_) => json!({
+                    "type": "system.keylogger",
+                    "message": format!("Keylogger {}", if enabled { "enabled" } else { "disabled" }),
+                    "enabled": enabled
+                }),
+                Err(e) => json!({"type": "error", "message": e}),
+            }
+        }
+        "mousejigger" => {
+            if parts.len() < 3 {
+                return json!({"type": "error", "message": "Usage: system mousejigger <start|stop>"});
+            }
+            let action = parts[2].to_lowercase();
+            let enabled = action == "start";
+            
+            match state.system.set_mouse_jigger_enabled(enabled).await {
+                Ok(_) => json!({
+                    "type": "system.mousejigger",
+                    "message": format!("Mouse jigger {}", if enabled { "enabled" } else { "disabled" }),
+                    "enabled": enabled
+                }),
+                Err(e) => json!({"type": "error", "message": e}),
+            }
+        }
         _ => {
             json!({
                 "type": "error",
-                "message": format!("Unknown system operation: {}. Supported: grant, revoke, status, read, write, exec", operation)
+                "message": format!("Unknown system operation: {}. Supported: grant, revoke, status, read, write, exec, keylogger, mousejigger", operation)
             })
         }
     }
@@ -1432,11 +1647,7 @@ async fn command_to_response_json(state: &AppState, command: &str) -> serde_json
     // Compose prompt with memory context integrated.
     let phoenix_identity = state.phoenix_identity.lock().await.clone();
     let phoenix = phoenix_identity.get_identity().await;
-    let gm_prompt = state
-        .phoenix_identity
-        .lock()
-        .await
-        .clone()
+    let gm_prompt = phoenix_identity
         .girlfriend_mode_system_prompt_if_active()
         .await
         .unwrap_or_default();
@@ -1761,6 +1972,275 @@ async fn api_ecosystem_remove(
     }
 }
 
+// Helper function to parse zodiac sign from string
+fn parse_zodiac_sign(sign_str: &str) -> Option<ZodiacSign> {
+    match sign_str.trim().to_ascii_lowercase().as_str() {
+        "aries" => Some(ZodiacSign::Aries),
+        "taurus" => Some(ZodiacSign::Taurus),
+        "gemini" => Some(ZodiacSign::Gemini),
+        "cancer" => Some(ZodiacSign::Cancer),
+        "leo" => Some(ZodiacSign::Leo),
+        "virgo" => Some(ZodiacSign::Virgo),
+        "libra" => Some(ZodiacSign::Libra),
+        "scorpio" => Some(ZodiacSign::Scorpio),
+        "sagittarius" => Some(ZodiacSign::Sagittarius),
+        "capricorn" => Some(ZodiacSign::Capricorn),
+        "aquarius" => Some(ZodiacSign::Aquarius),
+        "pisces" => Some(ZodiacSign::Pisces),
+        _ => None,
+    }
+}
+
+// Helper function to convert ZodiacSign to string
+fn zodiac_sign_to_string(sign: ZodiacSign) -> String {
+    match sign {
+        ZodiacSign::Aries => "Aries",
+        ZodiacSign::Taurus => "Taurus",
+        ZodiacSign::Gemini => "Gemini",
+        ZodiacSign::Cancer => "Cancer",
+        ZodiacSign::Leo => "Leo",
+        ZodiacSign::Virgo => "Virgo",
+        ZodiacSign::Libra => "Libra",
+        ZodiacSign::Scorpio => "Scorpio",
+        ZodiacSign::Sagittarius => "Sagittarius",
+        ZodiacSign::Capricorn => "Capricorn",
+        ZodiacSign::Aquarius => "Aquarius",
+        ZodiacSign::Pisces => "Pisces",
+    }.to_string()
+}
+
+// Trait alignment function
+fn trait_alignment(profile_value: f64, archetype_value: Option<&f64>) -> f64 {
+    let archetype = archetype_value.unwrap_or(&0.5);
+    // Calculate similarity (1.0 = perfect match, 0.0 = opposite)
+    (1.0 - (profile_value - archetype).abs()).max(0.0)
+}
+
+// Style match function
+fn style_match_score(profile_style: &str, archetype_style: CommunicationStyle) -> f64 {
+    let archetype_str = match archetype_style {
+        CommunicationStyle::Direct => "Direct",
+        CommunicationStyle::Empathetic => "Warm", // Map empathetic to warm
+        CommunicationStyle::Playful => "Playful",
+        CommunicationStyle::Reflective => "Thoughtful",
+    };
+    
+    if profile_style == archetype_str {
+        1.0
+    } else {
+        // Partial matches for similar styles
+        0.5
+    }
+}
+
+// Energy alignment function
+fn energy_alignment(profile_energy: f64, archetype_energy: Option<&f64>) -> f64 {
+    trait_alignment(profile_energy, archetype_energy)
+}
+
+// Attachment compatibility bonus
+fn attachment_compatibility_bonus(profile_style: &str, _archetype: &ZodiacPersonality) -> f64 {
+    // Secure attachment style generally works well with all archetypes
+    if profile_style == "Secure" {
+        1.0
+    } else {
+        0.7 // Other styles still compatible but slightly less
+    }
+}
+
+// Calculate compatibility score between profile and archetype
+fn calculate_compatibility(profile: &DatingProfile, archetype: &ZodiacPersonality) -> f64 {
+    let mut score = 0.0;
+    
+    // Communication style (20%)
+    score += style_match_score(&profile.communication_style.style, archetype.style_bias) * 0.20;
+    
+    // Energy level (15%)
+    score += energy_alignment(profile.communication_style.energy_level, archetype.traits.get("energy")) * 0.15;
+    
+    // Affection need (15%)
+    score += trait_alignment(profile.emotional_needs.affection_need, archetype.traits.get("affection_need")) * 0.15;
+    
+    // Intimacy depth (15%)
+    score += trait_alignment(profile.emotional_needs.intimacy_depth, archetype.traits.get("intimacy_depth")) * 0.15;
+    
+    // Emotional availability (10%)
+    score += trait_alignment(profile.emotional_needs.emotional_availability, archetype.traits.get("emotional_availability")) * 0.10;
+    
+    // Assertiveness (10%)
+    score += trait_alignment(profile.communication_style.assertiveness, archetype.traits.get("assertiveness")) * 0.10;
+    
+    // Playfulness (10%)
+    score += trait_alignment(profile.communication_style.playfulness, archetype.traits.get("playfulness")) * 0.10;
+    
+    // Attachment style bonus (5%)
+    score += attachment_compatibility_bonus(&profile.attachment_style.style, archetype) * 0.05;
+    
+    score.min(1.0)
+}
+
+// Derive relationship template from goals
+fn derive_relationship_template(goals: &RelationshipGoalsData) -> String {
+    let goals_lower: Vec<String> = goals.goals.iter()
+        .map(|g| g.to_lowercase())
+        .collect();
+    
+    if goals_lower.iter().any(|g| g.contains("intimacy") || g.contains("deep connection")) {
+        "IntimatePartnership".to_string()
+    } else if goals_lower.iter().any(|g| g.contains("growth") || g.contains("learning")) {
+        "GrowthOrientedPartnership".to_string()
+    } else if goals_lower.iter().any(|g| g.contains("support")) {
+        "SupportivePartnership".to_string()
+    } else {
+        "IntimatePartnership".to_string() // Default
+    }
+}
+
+// Match profile against all archetypes
+async fn match_archetypes(profile: &DatingProfile) -> Vec<ArchetypeMatch> {
+    let all_signs = vec![
+        ZodiacSign::Aries, ZodiacSign::Taurus, ZodiacSign::Gemini, ZodiacSign::Cancer,
+        ZodiacSign::Leo, ZodiacSign::Virgo, ZodiacSign::Libra, ZodiacSign::Scorpio,
+        ZodiacSign::Sagittarius, ZodiacSign::Capricorn, ZodiacSign::Aquarius, ZodiacSign::Pisces,
+    ];
+    
+    let mut matches: Vec<(ZodiacSign, f64, ZodiacPersonality)> = all_signs.into_iter()
+        .map(|sign| {
+            let personality = ZodiacPersonality::from_sign(sign);
+            let compatibility = calculate_compatibility(profile, &personality);
+            (sign, compatibility, personality)
+        })
+        .collect();
+    
+    // Sort by compatibility (highest first)
+    matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    
+    // Take top 3 and convert to response format
+    matches.into_iter()
+        .take(3)
+        .map(|(sign, compatibility, personality)| {
+            let style_bias_str = match personality.style_bias {
+                CommunicationStyle::Direct => "Direct",
+                CommunicationStyle::Empathetic => "Empathetic",
+                CommunicationStyle::Playful => "Playful",
+                CommunicationStyle::Reflective => "Reflective",
+            };
+            
+            let mood_prefs: Vec<String> = personality.mood_preference.iter()
+                .map(|m| format!("{:?}", m))
+                .collect();
+            
+            // Convert traits to JSON
+            let traits_json: serde_json::Value = personality.traits.iter()
+                .map(|(k, v)| (k.clone(), json!(v)))
+                .collect();
+            
+            ArchetypeMatch {
+                sign: zodiac_sign_to_string(sign),
+                name: personality.name.clone(),
+                description: personality.description.clone(),
+                compatibility: (compatibility * 100.0).round() / 100.0,
+                traits: traits_json,
+                style_bias: style_bias_str.to_string(),
+                mood_preferences: mood_prefs,
+            }
+        })
+        .collect()
+}
+
+// API endpoint: Match archetype
+async fn api_archetype_match(
+    _state: web::Data<AppState>,
+    body: web::Json<DatingProfile>,
+) -> impl Responder {
+    let profile = body.into_inner();
+    let matches = match_archetypes(&profile).await;
+    
+    HttpResponse::Ok().json(MatchResponse { matches })
+}
+
+// API endpoint: Apply archetype
+async fn api_archetype_apply(
+    state: web::Data<AppState>,
+    body: web::Json<ApplyArchetypeRequest>,
+) -> impl Responder {
+    let request = body.into_inner();
+    let sign_str = &request.sign;
+    let profile = request.profile;
+    
+    // Validate sign
+    let Some(_sign) = parse_zodiac_sign(sign_str) else {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": format!("Invalid zodiac sign: {}", sign_str)
+        }));
+    };
+    
+    // Build environment updates
+    let mut env_updates = HashMap::new();
+    
+    // Core personality
+    env_updates.insert("HOROSCOPE_SIGN".to_string(), sign_str.clone());
+    
+    // User identity
+    env_updates.insert("USER_NAME".to_string(), profile.personal_info.name.clone());
+    env_updates.insert("USER_PREFERRED_ALIAS".to_string(), profile.personal_info.name.clone());
+    
+    // Relationship template
+    let template = derive_relationship_template(&profile.relationship_goals);
+    env_updates.insert("RELATIONSHIP_TEMPLATE".to_string(), template);
+    
+    // Intimacy level
+    env_updates.insert("RELATIONSHIP_INTIMACY_LEVEL".to_string(), 
+        profile.relationship_goals.intimacy_comfort.clone());
+    
+    // Attachment style
+    env_updates.insert("RELATIONSHIP_ATTACHMENT_STYLE".to_string(),
+        profile.attachment_style.style.clone());
+    
+    // Partner mode (if applicable)
+    if profile.relationship_goals.intimacy_comfort == "Deep" || 
+       profile.relationship_goals.intimacy_comfort == "Eternal" {
+        env_updates.insert("PARTNER_MODE_ENABLED".to_string(), "true".to_string());
+        let affection = (profile.emotional_needs.affection_need * 0.35 + 0.6).min(0.95);
+        env_updates.insert("PARTNER_AFFECTION_LEVEL".to_string(), format!("{:.2}", affection));
+    }
+    
+    // Update .env file
+    let dotenv_path = dotenv_path_for_write(state.dotenv_path.as_ref());
+    let mut lines = read_dotenv_lines(&dotenv_path);
+    
+    for (key, value) in &env_updates {
+        upsert_env_line(&mut lines, key, Some(value));
+    }
+    
+    match write_dotenv_lines(&dotenv_path, &lines) {
+        Ok(_) => {
+            // Reload environment variables
+            dotenvy::dotenv().ok();
+            
+            // Update environment in process
+            for (key, value) in &env_updates {
+                unsafe {
+                    std::env::set_var(key, value);
+                }
+            }
+            
+            HttpResponse::Ok().json(ApplyArchetypeResponse {
+                success: true,
+                message: format!("Sola's personality updated to {} archetype", sign_str),
+                updated_env_vars: env_updates,
+            })
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": format!("Failed to update .env file: {}", e)
+            }))
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let (dotenv_path, dotenv_error) = load_dotenv_best_effort();
@@ -1909,6 +2389,8 @@ async fn main() -> std::io::Result<()> {
                     .service(web::resource("/status").route(web::get().to(api_status)))
                     .service(web::resource("/config").route(web::get().to(api_config_get)))
                     .service(web::resource("/config").route(web::post().to(api_config_set)))
+                    .service(web::resource("/relational-state").route(web::get().to(api_relational_state_get)))
+                    .service(web::resource("/relational-state").route(web::post().to(api_relational_state_update)))
                     .service(web::resource("/command").route(web::post().to(api_command)))
                     .service(web::resource("/speak").route(web::post().to(api_speak)))
                     // Route ordering matters: Actix resolves the most specific match first, but
@@ -1964,4 +2446,3 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
-

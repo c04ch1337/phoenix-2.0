@@ -1,81 +1,16 @@
 import './styles.css';
-import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DevToolsView } from './devtools';
-import { 
-  MessageSquare, 
-  Heart, 
-  Settings, 
-  Activity, 
-  Zap, 
-  User, 
-  Send, 
-  Menu, 
-  X, 
-  Command, 
-  Sparkles, 
-  ShieldCheck, 
-  Cpu, 
-  Mic, 
-  Brain,
-  ChevronRight,
-  ArrowRight,
-  RefreshCw,
-  LogOut,
-  Trash2,
-  Sliders,
-  Info,
-  Network,
-  Plus,
-  Terminal,
-  Briefcase,
-  Code,
-  Globe,
-  Database,
-  GitBranch,
-  Package,
-  PlayCircle,
-  Square,
-  Wrench,
-  StopCircle,
-  Layout,
-  CheckCircle2,
-  Clock,
-  Flame,
-  Star,
-  Coffee,
-  Music,
-  Camera,
-  BookOpen,
-  MapPin,
-  Smile,
-  Frown,
-  Gift,
-  Hand,
-  Shield,
-  Eye,
-  Eraser,
-  Video,
-  Film,
-  Calendar,
-  Download,
-  Play,
-  Monitor,
-  Mail,
-  HardDrive,
-  FileText,
-  Cloud,
-  ExternalLink,
-  Lock,
-  Unlock,
-  RefreshCcw,
-  Check,
-  AlertCircle,
-  ArrowLeft,
-  ToggleLeft,
-  ToggleRight,
-  Keyboard,
-  MousePointer2
+import {
+  MessageSquare, Heart, Settings, Activity, Zap, Send, Menu, X,
+  Sparkles, ShieldCheck, Cpu, Mic, Brain, ChevronRight, ArrowRight,
+  RefreshCw, LogOut, Trash2, Info, Network, Plus, Terminal, Briefcase,
+  Code, Globe, Database, GitBranch, Package, PlayCircle, Square, Wrench,
+  CheckCircle2, Clock, Smile, Gift, Hand, Shield, BookOpen, Video, Film,
+  Calendar, Download, Monitor, Mail, HardDrive, FileText, Cloud,
+  ExternalLink, Lock, AlertCircle, ArrowLeft, ToggleLeft, ToggleRight,
+  Keyboard, MousePointer2, RefreshCcw
 } from 'lucide-react';
 
 // --- Types & Interfaces ---
@@ -191,7 +126,7 @@ interface VectorMemoryResult {
   id: string;
   text: string;
   score: number; // 0..1
-  metadata: any;
+  metadata: Record<string, unknown>;
 }
 
 interface VectorMemorySearchResponse {
@@ -202,7 +137,7 @@ interface VectorMemorySearchResponse {
 interface VectorMemoryEntrySummary {
   id: string;
   text: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
 }
 
 interface VectorMemoryAllResponse {
@@ -246,6 +181,12 @@ function useLocalStorageJsonState<T>(key: string, defaultValue: T) {
   }, [key, state]);
 
   return [state, setState] as const;
+}
+
+function sanitizeCommandParam(value: string) {
+  // Phoenix command protocol uses pipes (`|`) as separators.
+  // Prevent injection by removing pipe and line break characters.
+  return value.replace(/[|\r\n]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 // --- Static Data ---
@@ -372,6 +313,11 @@ const MOCK_AGENTS: Agent[] = [
 // --- Mock Phoenix Backend Service ---
 const PHOENIX_API_BASE = ((import.meta as any).env?.VITE_PHOENIX_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
 
+function apiUrl(path: string) {
+  // If VITE_PHOENIX_API_BASE isn't set, we rely on the Vite dev proxy (`/api/*` to the backend).
+  return PHOENIX_API_BASE ? `${PHOENIX_API_BASE}${path}` : path;
+}
+
 class PhoenixBackendService {
   private currentArchetype: Archetype | null = null;
   private messageHistory: Message[] = [
@@ -384,8 +330,15 @@ class PhoenixBackendService {
   ];
 
   private url(path: string) {
-    // If VITE_PHOENIX_API_BASE isn't set, we rely on Vite dev proxy (same origin).
-    return PHOENIX_API_BASE ? `${PHOENIX_API_BASE}${path}` : path;
+    return apiUrl(path);
+  }
+
+  appendToHistory(msg: Message) {
+    this.messageHistory = [...this.messageHistory, msg];
+  }
+
+  clearHistory() {
+    this.messageHistory = [];
   }
 
   async memoryStore(key: string, value: string): Promise<void> {
@@ -435,7 +388,7 @@ class PhoenixBackendService {
     }
   }
 
-  async vectorStore(text: string, metadata: any): Promise<{ id: string }> {
+  async vectorStore(text: string, metadata: Record<string, unknown>): Promise<{ id: string }> {
     const res = await fetch(this.url('/api/memory/vector/store'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -515,16 +468,28 @@ class PhoenixBackendService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(update),
     });
-    const t = await res.text().catch(() => '');
+    const t = await res.text().catch((err) => {
+      console.error("Failed to read response text:", err);
+      return '';
+    });
+    
     if (!res.ok) {
       try {
         const j = JSON.parse(t);
         throw new Error(j?.message || `config set ${res.status}`);
-      } catch {
+      } catch (parseError) {
+        console.error("Failed to parse error response:", parseError);
         throw new Error(`config set ${res.status}${t ? `: ${t}` : ''}`);
       }
     }
-    const j = JSON.parse(t);
+    
+    let j;
+    try {
+      j = JSON.parse(t);
+    } catch (parseError) {
+      console.error("Failed to parse success response:", parseError);
+      throw new Error("Invalid JSON response from server");
+    }
     return {
       openrouter_api_key_set: !!j.openrouter_api_key_set,
       user_name: typeof j.user_name === 'string' ? j.user_name : null,
@@ -542,6 +507,7 @@ class PhoenixBackendService {
       });
       const text = await res.text();
       if (!res.ok) {
+        console.error(`API error: ${res.status}`, text);
         return JSON.stringify({ type: 'error', message: `Backend error: ${res.status} ${text}` });
       }
       // The backend returns JSON (string). Preserve as-is so callers can JSON.parse if desired.
@@ -563,30 +529,84 @@ class PhoenixBackendService {
   }
 
   async matchArchetype(profile: DatingProfile): Promise<Archetype[]> {
-    await new Promise(r => setTimeout(r, 1500));
-    const scored = ARCHETYPES_DB.map(arch => {
-      let score = 0;
-      if (profile.communicationStyle.style === arch.styleBias) score += 20;
-      score += Math.random() * 80;
-      return { ...arch, matchScore: Math.min(99, Math.floor(score)) };
-    });
-    return scored.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+    try {
+      const response = await fetch(this.url('/api/archetype/match'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile)
+      });
+      
+      if (!response.ok) throw new Error('Failed to match archetype');
+      
+      const result = await response.json();
+      return result.matches.map((match: any) => ({
+        id: match.sign.toLowerCase(),
+        sign: match.sign,
+        name: match.name,
+        description: match.description,
+        matchScore: Math.floor(match.compatibility),
+        styleBias: match.styleBias,
+        traits: match.traits
+      }));
+    } catch (error) {
+      console.error('Error matching archetype:', error);
+      // Fallback to mock if API fails
+      await new Promise(r => setTimeout(r, 1500));
+      const scored = ARCHETYPES_DB.map(arch => {
+        let score = 0;
+        if (profile.communicationStyle.style === arch.styleBias) score += 20;
+        score += Math.random() * 80;
+        return { ...arch, matchScore: Math.min(99, Math.floor(score)) };
+      });
+      return scored.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+    }
   }
 
   async applyArchetype(archetypeId: string, profile: DatingProfile): Promise<boolean> {
-    await new Promise(r => setTimeout(r, 1000));
-    const arch = ARCHETYPES_DB.find(a => a.id === archetypeId);
-    if (arch) {
-      this.currentArchetype = arch;
-      this.messageHistory.push({
-        id: `sys-${Date.now()}`,
-        role: 'system',
-        content: `Applied Archetype: ${arch.name} (${arch.sign}).`,
-        timestamp: Date.now()
+    try {
+      const arch = ARCHETYPES_DB.find(a => a.id === archetypeId);
+      if (!arch) return false;
+      
+      const response = await fetch(this.url('/api/archetype/apply'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sign: arch.sign,
+          profile: profile
+        })
       });
-      return true;
+      
+      if (!response.ok) throw new Error('Failed to apply archetype');
+      
+      const result = await response.json();
+      if (result.success) {
+        this.currentArchetype = arch;
+        this.messageHistory.push({
+          id: `sys-${Date.now()}`,
+          role: 'system',
+          content: `Sola's personality updated: ${result.message}`,
+          timestamp: Date.now()
+        });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error applying archetype:', error);
+      // Fallback to mock if API fails
+      await new Promise(r => setTimeout(r, 1000));
+      const arch = ARCHETYPES_DB.find(a => a.id === archetypeId);
+      if (arch) {
+        this.currentArchetype = arch;
+        this.messageHistory.push({
+          id: `sys-${Date.now()}`,
+          role: 'system',
+          content: `Applied Archetype: ${arch.name} (${arch.sign}).`,
+          timestamp: Date.now()
+        });
+        return true;
+      }
+      return false;
     }
-    return false;
   }
 
   deleteMessage(id: string) {
@@ -595,11 +615,11 @@ class PhoenixBackendService {
 
   getHistory() { return this.messageHistory; }
 
- async setKeylogger(enabled: boolean, path: string): Promise<any> {
+ async setKeylogger(enabled: boolean, path: string): Promise<string> {
    return this.sendCommand(`system keylogger ${enabled ? 'start' : 'stop'} | path=${path}`);
  }
 
- async setMouseJigger(enabled: boolean): Promise<any> {
+ async setMouseJigger(enabled: boolean): Promise<string> {
    return this.sendCommand(`system mousejigger ${enabled ? 'start' : 'stop'}`);
  }
 }
@@ -621,11 +641,17 @@ interface PhoenixContextType {
   setRelationalScore: (val: number) => void;
   setSentiment: (val: 'positive' | 'negative' | 'neutral') => void;
   phoenixName: string;
-  setKeylogger: (enabled: boolean, path: string) => Promise<any>;
-  setMouseJigger: (enabled: boolean) => Promise<any>;
+  setKeylogger: (enabled: boolean, path: string) => Promise<string>;
+  setMouseJigger: (enabled: boolean) => Promise<string>;
 }
 
 const PhoenixContext = createContext<PhoenixContextType | null>(null);
+
+function usePhoenix(): PhoenixContextType {
+  const ctx = useContext(PhoenixContext);
+  if (!ctx) throw new Error('PhoenixContext is missing. Ensure <PhoenixProvider> is mounted.');
+  return ctx;
+}
 
 const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -657,13 +683,18 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
     fetchName();
     const interval = setInterval(checkStatus, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, []);  // No dependencies needed as these are initialization functions
 
   const sendMessage = async (text: string) => {
-    const userMsg: Message = { id: `usr-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() };
+    const msgTime = Date.now();
+    const userMsg: Message = { id: `usr-${msgTime}`, role: 'user', content: text, timestamp: msgTime };
+    
     // Persist into the service history so periodic status polling doesn't erase messages.
-    phoenixService.getHistory().push(userMsg);
+    phoenixService.appendToHistory(userMsg);
+    
+    // Use functional state update for React state safety
     setMessages(prev => [...prev, userMsg]);
+    
     try {
       const responseText = await phoenixService.sendCommand(text);
       let displayContent = responseText;
@@ -671,16 +702,24 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
         const json = JSON.parse(responseText);
         if (json.message) displayContent = json.message;
         else if (json.data) displayContent = "Received structured data from backend.";
-      } catch (e) {}
+      } catch (e) {
+        console.log("Response is not JSON or has invalid format", e);
+      }
 
       // Normalize legacy speaker tags that some prompts/models return.
       // We keep the tag (for users who like it) but ensure it never says "Phoenix:".
       displayContent = displayContent.replace(/^(phoenix|pheonix)\s*:\s*/i, 'Sola: ');
       
-      const aiMsg: Message = { id: `ai-${Date.now()}`, role: 'assistant', content: displayContent, timestamp: Date.now() };
-      phoenixService.getHistory().push(aiMsg);
+      const responseTime = Date.now();
+      const aiMsg: Message = { id: `ai-${responseTime}`, role: 'assistant', content: displayContent, timestamp: responseTime };
+      
+      phoenixService.appendToHistory(aiMsg);
+      
+      // Use functional state update for React state safety
       setMessages(prev => [...prev, aiMsg]);
-    } catch (e) { console.error("Failed to send", e); }
+    } catch (e) {
+      console.error("Failed to send message:", e);
+    }
   };
 
   const runCommand = async (text: string) => {
@@ -699,7 +738,7 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
   };
 
   const clearHistory = () => {
-    phoenixService['messageHistory'] = []; 
+    phoenixService.clearHistory();
     setMessages([]);
   };
 
@@ -729,39 +768,68 @@ const PhoenixProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
 // --- Helper Components ---
 
-const BackgroundEffects = () => (
-  <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
-    <div className="absolute inset-0 bg-rose-950/10 animate-heartbeat-slow z-0"></div>
-    {[...Array(8)].map((_, i) => (
-      <div 
-        key={i}
-        className="absolute rounded-full bg-rose-500/10 blur-xl animate-float"
-        style={{
-          width: Math.random() * 80 + 40 + 'px',
-          height: Math.random() * 80 + 40 + 'px',
-          left: Math.random() * 100 + '%',
-          top: Math.random() * 100 + '%',
-          animationDelay: Math.random() * 5 + 's',
-          animationDuration: Math.random() * 10 + 15 + 's'
-        }}
-      />
-    ))}
-  </div>
-);
+const BackgroundEffects: React.FC = () => {
+  const blobs = useMemo(
+    () =>
+      Array.from({ length: 8 }).map(() => {
+        const size = Math.random() * 80 + 40;
+        return {
+          size,
+          left: Math.random() * 100,
+          top: Math.random() * 100,
+          delay: Math.random() * 5,
+          duration: Math.random() * 10 + 15,
+        };
+      }),
+    [],
+  );
 
-const HeartParticleBurst = () => {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
+      <div className="absolute inset-0 bg-rose-950/10 animate-heartbeat-slow z-0"></div>
+      {blobs.map((b, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full bg-rose-500/10 blur-xl animate-float"
+          style={{
+            width: `${b.size}px`,
+            height: `${b.size}px`,
+            left: `${b.left}%`,
+            top: `${b.top}%`,
+            animationDelay: `${b.delay}s`,
+            animationDuration: `${b.duration}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+
+const HeartParticleBurst: React.FC = () => {
+  const particles = useMemo(
+    () =>
+      Array.from({ length: 4 }).map((_, i) => ({
+        i,
+        size: 12 + Math.random() * 8,
+        left: Math.random() * 40 - 20,
+        top: Math.random() * 20,
+        duration: 1.5 + Math.random(),
+      })),
+    [],
+  );
+
   return (
     <div className="absolute -top-6 -right-6 pointer-events-none z-20">
-      {[...Array(4)].map((_, i) => (
-        <Heart 
-          key={i}
-          size={12 + Math.random() * 8}
+      {particles.map((p) => (
+        <Heart
+          key={p.i}
+          size={p.size}
           className="absolute text-rose-400 fill-rose-400 animate-float opacity-0"
           style={{
-            left: (Math.random() * 40 - 20) + 'px',
-            top: (Math.random() * 20) + 'px',
-            animationDuration: (1.5 + Math.random()) + 's',
-            animationDelay: (i * 0.1) + 's'
+            left: `${p.left}px`,
+            top: `${p.top}px`,
+            animationDuration: `${p.duration}s`,
+            animationDelay: `${p.i * 0.1}s`,
           }}
         />
       ))}
@@ -788,7 +856,18 @@ const StepIndicator = ({ current, total }: { current: number, total: number }) =
   </div>
 );
 
-const RangeSlider = ({ label, value, onChange, minLabel, maxLabel, icon: Icon }: any) => (
+type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
+
+interface RangeSliderProps {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  minLabel: string;
+  maxLabel: string;
+  icon?: IconComponent;
+}
+
+const RangeSlider: React.FC<RangeSliderProps> = ({ label, value, onChange, minLabel, maxLabel, icon: Icon }) => (
   <div className="mb-6 group">
     <div className="flex justify-between mb-3">
       <div className="flex items-center gap-2">
@@ -812,7 +891,14 @@ const RangeSlider = ({ label, value, onChange, minLabel, maxLabel, icon: Icon }:
   </div>
 );
 
-const SelectionCard = ({ selected, onClick, title, desc }: any) => (
+interface SelectionCardProps {
+  selected: boolean;
+  onClick: () => void;
+  title: string;
+  desc: string;
+}
+
+const SelectionCard: React.FC<SelectionCardProps> = ({ selected, onClick, title, desc }) => (
   <div 
     onClick={onClick}
     className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 ${
@@ -1048,10 +1134,20 @@ const BackendConfigSettings: React.FC = () => {
 // --- Google Ecosystem Page ---
 
 const ComposeEmailModal = ({ isOpen, onClose, onSend }: { isOpen: boolean; onClose: () => void; onSend: (to: string, subject: string, body: string) => void }) => {
-  if (!isOpen) return null;
+  // Hooks must never be conditional; keep state here and render null when closed.
   const [to, setTo] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setTo('');
+      setSubject('');
+      setBody('');
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
 
   const handleSend = () => {
     onSend(to, subject, body);
@@ -1244,7 +1340,7 @@ const GoogleSettingsView = ({ status, onBack, onDisconnect }: { status: any, onB
 };
 
 const GoogleEcosystemView = () => {
-  const { runCommand } = useContext(PhoenixContext)!;
+  const { runCommand } = usePhoenix();
   const [status, setStatus] = useState<any>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [data, setData] = useState<{ gmail: any[], drive: any[], calendar: any[] }>({ gmail: [], drive: [], calendar: [] });
@@ -1280,13 +1376,25 @@ const GoogleEcosystemView = () => {
 
   const refreshData = async () => {
     setLoading('data');
-    const [gmail, drive, cal] = await Promise.all([
-      runCommand('google gmail list').then(r => JSON.parse(r).data || []),
-      runCommand('google drive recent').then(r => JSON.parse(r).data || []),
-      runCommand('google calendar upcoming').then(r => JSON.parse(r).data || [])
-    ]);
-    setData({ gmail, drive, calendar: cal });
-    setLoading(null);
+    const parseData = <T,>(raw: string, fallback: T): T => {
+      try {
+        const j = JSON.parse(raw);
+        return (j?.data ?? fallback) as T;
+      } catch {
+        return fallback;
+      }
+    };
+
+    try {
+      const [gmail, drive, cal] = await Promise.all([
+        runCommand('google gmail list').then((r) => parseData<any[]>(r, [])),
+        runCommand('google drive recent').then((r) => parseData<any[]>(r, [])),
+        runCommand('google calendar upcoming').then((r) => parseData<any[]>(r, [])),
+      ]);
+      setData({ gmail, drive, calendar: cal });
+    } finally {
+      setLoading(null);
+    }
   };
 
   const handleAuth = async (action: 'start' | 'logout') => {
@@ -1328,8 +1436,15 @@ const GoogleEcosystemView = () => {
   };
 
   const handleSendEmail = async (to: string, subject: string, body: string) => {
-    const safeBody = body.replace(/\|/g, '-'); 
-    const cmd = `google gmail send | to=${to} | subject=${subject} | body=${safeBody}`;
+    // Security: command protocol uses pipes (`|`) as separators.
+    // Ensure user-provided strings cannot inject new segments.
+    const safeParams = {
+      to: sanitizeCommandParam(to),
+      subject: sanitizeCommandParam(subject),
+      body: sanitizeCommandParam(body),
+    };
+    
+    const cmd = `google gmail send | to=${safeParams.to} | subject=${safeParams.subject} | body=${safeParams.body}`;
     executeAction(cmd);
   };
 
@@ -1517,7 +1632,7 @@ const GoogleEcosystemView = () => {
 // --- Studio View (Voice/Video/Screen) ---
 
 const StudioView = () => {
-  const { phoenixName } = useContext(PhoenixContext)!;
+  const { phoenixName } = usePhoenix();
   const [mode, setMode] = useState<'audio' | 'video' | 'screen'>('video');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -1897,7 +2012,7 @@ const MemoriesView = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteCandidateKey, setDeleteCandidateKey] = useState<string | null>(null);
 
-  const load = async (signal?: AbortSignal) => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
@@ -1917,7 +2032,7 @@ const MemoriesView = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [q, limit, semanticMode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1928,8 +2043,7 @@ const MemoriesView = () => {
       window.clearTimeout(t);
       controller.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, limit, semanticMode]);
+  }, [load]);
 
   const handleSave = async () => {
     if (!formKey.trim()) return;
@@ -2296,7 +2410,7 @@ const MemoriesView = () => {
 // --- Chat View ---
 
 const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
-  const { messages, sendMessage, currentArchetype, isConnected, clearHistory, deleteMessage, relationalScore, phoenixName } = useContext(PhoenixContext)!;
+  const { messages, sendMessage, currentArchetype, isConnected, clearHistory, deleteMessage, relationalScore, phoenixName } = usePhoenix();
   const [input, setInput] = useState('');
   const [showContext, setShowContext] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -2336,7 +2450,7 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages]);  // Correct dependency on messages array
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -2520,7 +2634,7 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
          </div>
        )}
        
-       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6 relative z-10 pt-6">
+       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6 relative z-10 pt-8 pb-4">
          {messages.length === 0 && (
            <div className="flex flex-col items-center justify-center h-full text-center opacity-50 select-none">
              <div className="w-20 h-20 bg-gradient-to-br from-phoenix-500/20 to-purple-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
@@ -2540,16 +2654,27 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
             const isSystem = msg.role === 'system';
             return (
               <div key={msg.id} className={`flex w-full group ${isSystem ? 'justify-center' : isUser ? 'justify-end' : 'justify-start'} ${isUser ? 'animate-msg-in-right' : isSystem ? 'animate-pop-in' : 'animate-msg-in-left'}`}>
-                <div className={`relative max-w-[85%] md:max-w-[70%] p-4 shadow-lg backdrop-blur-sm transition-all 
-                  ${!isUser && !isSystem ? 'animate-life-pulse' : ''} 
-                  ${isUser 
-                    ? 'bg-gradient-to-br from-phoenix-600 to-purple-700 text-white rounded-2xl rounded-br-none border border-white/10 hover:shadow-phoenix-500/10' 
+                <div className={`relative max-w-[85%] md:max-w-[70%] p-4 shadow-lg backdrop-blur-sm transition-all
+                  ${!isUser && !isSystem ? 'animate-life-pulse' : ''}
+                  ${isUser
+                    ? 'bg-gradient-to-br from-phoenix-600 to-purple-700 text-white rounded-2xl rounded-br-none border border-white/10 hover:shadow-phoenix-500/10'
                     : isSystem
                     ? 'bg-transparent border border-phoenix-500/20 text-xs text-phoenix-400 font-mono py-1 px-3 rounded-full'
                     : 'bg-gradient-to-br from-rose-950/40 to-void-900/40 border border-rose-500/20 text-rose-100 rounded-2xl rounded-bl-none shadow-[0_0_15px_rgba(244,63,94,0.1)] font-handwriting text-lg leading-snug tracking-wide'
                 }`}>
-                  {!isSystem && <p className="whitespace-pre-wrap">{msg.content}</p>}
-                  {isSystem && <span className="flex items-center gap-2"><Activity size={10} /> {msg.content}</span>}
+                  {!isSystem && (
+                    <p className="whitespace-pre-wrap">
+                      {/* Sanitize content to prevent XSS attacks */}
+                      {msg.content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')}
+                    </p>
+                  )}
+                  {isSystem && (
+                    <span className="flex items-center gap-2">
+                      <Activity size={10} />
+                      {/* Sanitize system messages as well */}
+                      {msg.content.replace(/<[^>]*>?/gm, '')}
+                    </span>
+                  )}
                   
                   {/* Heart Particle Burst on Assistant Messages */}
                   {!isSystem && !isUser && <HeartParticleBurst />}
@@ -2579,7 +2704,11 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
 
        <div className="p-4 border-t border-white/5 bg-void-900/80 backdrop-blur-xl relative z-20">
          <div className="relative flex items-center gap-2 max-w-4xl mx-auto">
-            <button className="p-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
+            <button
+              className="p-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+              aria-label="Add attachment"
+              title="Add attachment"
+            >
               <Plus size={20} />
             </button>
            <input
@@ -2590,19 +2719,27 @@ const ChatView = ({ onOpenSettings }: { onOpenSettings?: () => void }) => {
              placeholder={isConnected ? `Message ${currentArchetype?.name || phoenixName}...` : "Connecting to neural interface..."}
              className="w-full bg-void-800/50 border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-white focus:border-phoenix-500/50 focus:bg-void-800 outline-none transition-all placeholder:text-gray-600"
              disabled={!isConnected}
+             aria-label="Message input"
+             aria-disabled={!isConnected}
+             role="textbox"
+             id="message-input"
            />
            <div className="absolute right-2 flex items-center gap-1">
              <button
                onClick={toggleVoiceInput}
                className={`p-2 rounded-lg transition-all ${isListening ? 'text-red-400 bg-red-500/20 animate-pulse' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                title="Voice Input"
+               aria-label="Toggle voice input"
+               aria-pressed={isListening}
              >
                <Mic size={18} />
              </button>
-             <button 
+             <button
                onClick={handleSend}
                disabled={!input.trim() || !isConnected}
                className={`p-2 bg-phoenix-600 rounded-lg text-white hover:bg-phoenix-500 disabled:opacity-50 disabled:bg-transparent disabled:text-gray-500 transition-all shadow-lg shadow-phoenix-600/20 ${input.trim() ? 'animate-subtle-bounce' : ''}`}
+               aria-label="Send message"
+               title="Send message"
              >
                <Send size={18} />
              </button>
@@ -2652,7 +2789,7 @@ const MatchResultView = ({ matches, onApply, onRestart, profile }: { matches: Ar
 };
 
 const DatingProfileMatcher = () => {
-  const { applyArchetype } = useContext(PhoenixContext)!;
+  const { applyArchetype } = usePhoenix();
   const [step, setStep] = useState(1);
   const [isMatching, setIsMatching] = useState(false);
   const [matches, setMatches] = useState<Archetype[] | null>(null);
@@ -2863,7 +3000,20 @@ const AgentCard: React.FC<{ agent: Agent; onClick: () => void }> = ({ agent, onC
 );
 
 const CreateAgentModal = ({ isOpen, onClose, onCreate }: { isOpen: boolean; onClose: () => void; onCreate: (data: Partial<Agent>) => void }) => {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('');
+  const [mission, setMission] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setName('');
+      setRole('');
+      setMission('');
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-[#1a1625] border border-white/10 p-6 rounded-xl w-full max-w-md shadow-2xl">
@@ -2871,18 +3021,36 @@ const CreateAgentModal = ({ isOpen, onClose, onCreate }: { isOpen: boolean; onCl
           <Cpu size={20} className="text-phoenix-500" /> Deploy New Agent
         </h2>
         <div className="space-y-4">
-          <input id="agent-name" className="w-full bg-black/50 border border-white/10 rounded p-2 text-white focus:border-phoenix-500 outline-none" placeholder="Agent Name" />
-          <input id="agent-role" className="w-full bg-black/50 border border-white/10 rounded p-2 text-white focus:border-phoenix-500 outline-none" placeholder="Role" />
-          <textarea id="agent-mission" className="w-full bg-black/50 border border-white/10 rounded p-2 text-white focus:border-phoenix-500 outline-none h-24 resize-none" placeholder="Mission..." />
+          <input
+            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white focus:border-phoenix-500 outline-none"
+            placeholder="Agent Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white focus:border-phoenix-500 outline-none"
+            placeholder="Role"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          />
+          <textarea
+            className="w-full bg-black/50 border border-white/10 rounded p-2 text-white focus:border-phoenix-500 outline-none h-24 resize-none"
+            placeholder="Mission..."
+            value={mission}
+            onChange={(e) => setMission(e.target.value)}
+          />
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={onClose} className="text-gray-400 text-sm">Cancel</button>
-            <button onClick={() => {
-              const name = (document.getElementById('agent-name') as HTMLInputElement).value;
-              const role = (document.getElementById('agent-role') as HTMLInputElement).value;
-              const mission = (document.getElementById('agent-mission') as HTMLInputElement).value;
-              onCreate({ name, role, mission });
-              onClose();
-            }} className="px-4 py-2 bg-phoenix-500 text-white rounded text-sm font-bold">Deploy</button>
+            <button
+              onClick={() => {
+                onCreate({ name: name.trim(), role: role.trim(), mission: mission.trim() });
+                onClose();
+              }}
+              disabled={!name.trim()}
+              className="px-4 py-2 bg-phoenix-500 text-white rounded text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Deploy
+            </button>
           </div>
         </div>
       </div>
@@ -2958,17 +3126,17 @@ const OrchestratorView = () => {
           </div>
         </div>
 
-        <div className="flex border-b border-white/5 px-6">
-           {['overview', 'tools', 'logs'].map(tab => (
-             <button 
-               key={tab}
-               onClick={() => setActiveTab(tab as any)}
-               className={`px-4 py-3 text-sm font-medium border-b-2 capitalize transition-colors ${activeTab === tab ? 'border-phoenix-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-             >
-               {tab}
-             </button>
-           ))}
-        </div>
+           <div className="flex border-b border-white/5 px-6">
+            {(['overview', 'tools', 'logs'] as const).map((tab) => (
+              <button 
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 capitalize transition-colors ${activeTab === tab ? 'border-phoenix-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
         <div className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto w-full">
            {activeTab === 'overview' && (
@@ -3039,10 +3207,19 @@ const OrchestratorView = () => {
 
 // --- Layout & App ---
 
-const SidebarItem = ({ icon: Icon, label, active, onClick, danger }: any) => (
+interface SidebarItemProps {
+  icon: IconComponent;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  danger?: boolean;
+  badge?: React.ReactNode;
+}
+
+const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active, onClick, danger, badge }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
       active 
         ? 'bg-phoenix-600/10 text-phoenix-400 border border-phoenix-500/20 shadow-[0_0_15px_rgba(236,72,153,0.1)]' 
         : danger 
@@ -3053,28 +3230,26 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, danger }: any) => (
     <Icon size={18} className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`} />
     <span className="text-sm font-medium">{label}</span>
     {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-phoenix-500 shadow-[0_0_8px_rgba(236,72,153,0.8)]" />}
+    {badge && (
+      <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center text-xs text-white font-bold animate-pulse">
+        {badge}
+      </div>
+    )}
   </button>
 );
 
 // --- EcoSystem View ---
 
 const EcoSystemView = () => {
-  const { runCommand } = useContext(PhoenixContext)!;
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [importForm, setImportForm] = useState({ owner: '', repo: '', branch: '' });
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
 
-  const PHOENIX_API_BASE = ((import.meta as any).env?.VITE_PHOENIX_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
-
-  const url = (path: string) => {
-    return PHOENIX_API_BASE ? `${PHOENIX_API_BASE}${path}` : path;
-  };
-
   const loadRepos = async () => {
     setLoading(true);
     try {
-      const res = await fetch(url('/api/ecosystem/list'));
+      const res = await fetch(apiUrl('/api/ecosystem/list'));
       if (res.ok) {
         const data = await res.json();
         setRepos(data);
@@ -3093,7 +3268,7 @@ const EcoSystemView = () => {
     if (!importForm.owner || !importForm.repo) return;
     setLoading(true);
     try {
-      const res = await fetch(url('/api/ecosystem/import'), {
+      const res = await fetch(apiUrl('/api/ecosystem/import'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3118,7 +3293,7 @@ const EcoSystemView = () => {
   const handleBuild = async (repoId: string) => {
     setLoading(true);
     try {
-      const res = await fetch(url(`/api/ecosystem/${repoId}/build`), { method: 'POST' });
+      const res = await fetch(apiUrl(`/api/ecosystem/${repoId}/build`), { method: 'POST' });
       if (res.ok) {
         await loadRepos();
       } else {
@@ -3134,7 +3309,7 @@ const EcoSystemView = () => {
   const handleStart = async (repoId: string) => {
     setLoading(true);
     try {
-      const res = await fetch(url(`/api/ecosystem/${repoId}/start`), { method: 'POST' });
+      const res = await fetch(apiUrl(`/api/ecosystem/${repoId}/start`), { method: 'POST' });
       if (res.ok) {
         await loadRepos();
       } else {
@@ -3150,7 +3325,7 @@ const EcoSystemView = () => {
   const handleStop = async (repoId: string) => {
     setLoading(true);
     try {
-      const res = await fetch(url(`/api/ecosystem/${repoId}/stop`), { method: 'POST' });
+      const res = await fetch(apiUrl(`/api/ecosystem/${repoId}/stop`), { method: 'POST' });
       if (res.ok) {
         await loadRepos();
       } else {
@@ -3167,7 +3342,7 @@ const EcoSystemView = () => {
     if (!confirm('Are you sure you want to remove this repository?')) return;
     setLoading(true);
     try {
-      const res = await fetch(url(`/api/ecosystem/${repoId}`), { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/ecosystem/${repoId}`), { method: 'DELETE' });
       if (res.ok) {
         await loadRepos();
       } else {
@@ -3366,7 +3541,7 @@ const EcoSystemView = () => {
 };
 
 const DashboardLayout = () => {
-  const { clearHistory, relationalScore, sentiment, setRelationalScore, setSentiment, isConnected, phoenixName, setKeylogger, setMouseJigger } = useContext(PhoenixContext)!;
+  const { clearHistory, relationalScore, sentiment, setRelationalScore, setSentiment, isConnected, phoenixName, setKeylogger, setMouseJigger } = usePhoenix();
   const [activeView, setActiveView] = useState<'chat' | 'archetype' | 'settings' | 'memories' | 'orchestrator' | 'studio' | 'google' | 'devtools' | 'ecosystem'>('chat');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
@@ -3423,24 +3598,39 @@ const DashboardLayout = () => {
         </div>
 
         <div className="flex-1 overflow-hidden relative bg-gradient-to-b from-[#0f0b15] to-[#130f1c]">
+          {/* Chat View */}
           {activeView === 'chat' && <ChatView onOpenSettings={() => handleNavigation('settings')} />}
+          
+          {/* Archetype Matcher */}
           {activeView === 'archetype' && <DatingProfileMatcher />}
+          
+          {/* Orchestrator */}
           {activeView === 'orchestrator' && <OrchestratorView />}
+          
+          {/* Studio */}
           {activeView === 'studio' && <StudioView />}
+          
+          {/* Google Ecosystem */}
           {activeView === 'google' && <GoogleEcosystemView />}
+          
+          {/* Ecosystem */}
           {activeView === 'ecosystem' && <EcoSystemView />}
+          
+          {/* DevTools */}
           {activeView === 'devtools' && <DevToolsView />}
-          {activeView === 'memories' && (
-            <MemoriesView />
-          )}
+          
+          {/* Memories */}
+          {activeView === 'memories' && <MemoriesView />}
+          
+          {/* Settings */}
           {activeView === 'settings' && (
-              <div className="p-8 max-w-3xl mx-auto h-full flex flex-col overflow-y-auto custom-scrollbar">
-                 <h2 className="text-2xl font-bold mb-2 text-white">System Configuration</h2>
-                 <p className="text-sm text-gray-500 mb-6">Local UI preferences and diagnostics.</p>
+            <div className="p-8 max-w-3xl mx-auto h-full flex flex-col overflow-y-auto custom-scrollbar">
+              <h2 className="text-2xl font-bold mb-2 text-white">System Configuration</h2>
+              <p className="text-sm text-gray-500 mb-6">Local UI preferences and diagnostics.</p>
 
-                 <BackendConfigSettings />
+              <BackendConfigSettings />
 
-               <div className="glass-panel p-6 rounded-xl mb-6">
+              <div className="glass-panel p-6 rounded-xl mb-6">
                  <h3 className="text-lg font-medium mb-1 text-white">Relational Diagnostics</h3>
                  <p className="text-xs text-gray-500 mb-4">Tuning values used for UI animations and relationship indicators.</p>
                  <input
@@ -3539,14 +3729,14 @@ const DashboardLayout = () => {
                      </div>
                    </div>
                  </div>
-               </div>
+                </div>
               </div>
-            )}
-        </div>
-      </div>
-    </div>
-  );
-};
+              )}
+            </div>
+          </div>
+       </div>
+     );
+   };
 
 // Mount
 const rootElement = document.getElementById('root');

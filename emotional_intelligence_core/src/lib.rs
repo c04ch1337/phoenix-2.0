@@ -102,6 +102,7 @@ impl EmotionalIntelligenceCore {
                 "fear" | "afraid" => Some(DetectedEmotion::Fear),
                 "surprise" | "surprised" => Some(DetectedEmotion::Surprise),
                 "disgust" => Some(DetectedEmotion::Disgust),
+                "jealousy" | "jealous" | "envious" | "envy" => Some(DetectedEmotion::Jealousy),
                 _ => Some(DetectedEmotion::Neutral),
             }
         })?;
